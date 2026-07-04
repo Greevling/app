@@ -64,12 +64,13 @@ function buildLevel(level, duration, beatTimes) {
 
   if (beatTimes && beatTimes.length > 0) {
     let lastX = 0;
+    const MIN_GAP = 340;   // was 140 — much breathier pacing
     for (let i = 0; i < beatTimes.length; i++) {
       const t = beatTimes[i];
       if (t < 2) continue;
       const x = t * speed;
       if (x > totalWidth - 300) break;
-      if (x - lastX < 140) continue;
+      if (x - lastX < MIN_GAP) continue;
       const r = rand();
       const kind = r < 0.2 ? "pit" : r < 0.55 ? "flyer" : "spike";
       if (kind === "pit") {
@@ -80,18 +81,19 @@ function buildLevel(level, duration, beatTimes) {
         lastX = x + w;
       } else if (kind === "flyer") {
         // Toilet flushes: poop erupts straight up from the bowl and falls back onto it.
-        obstacles.push({ type: "flyer", x, w: 22, h: 22, spawnT: t });
-        // Launcher toilet sits at the SAME x as the poop (visually aligned under it).
-        obstacles.push({ type: "spike", x: x - 4, w: 30, h: 24, _launcher: true });
+        const flyer = { type: "flyer", x, w: 22, h: 22, spawnT: t };
+        obstacles.push(flyer);
+        // Launcher toilet sits at the SAME x as the poop and knows which flyer it belongs to.
+        obstacles.push({ type: "spike", x: x - 4, w: 30, h: 24, _launcher: true, _flyer: flyer });
         // Burger placed BEFORE the toilet so player is baited into the danger zone.
         collectibles.push({ x: x - 110, y: 240, taken: false });
-        lastX = x + 60;
+        lastX = x + 80;
       } else {
         const w = 26 + Math.floor(rand() * 14);
         const h = 30 + Math.floor(rand() * 22);
         obstacles.push({ type: "spike", x, w, h });
         collectibles.push({ x: x - 70, y: 240, taken: false });
-        lastX = x + w;
+        lastX = x + w + 40;          // spike branch — bit of extra tail
       }
     }
     return { obstacles, collectibles, platforms, totalWidth, speed };
@@ -108,14 +110,14 @@ function buildLevel(level, duration, beatTimes) {
       for (let i = 0; i < 3; i++) {
         collectibles.push({ x: x + 10 + i * (w / 3), y: midY - Math.sin((i / 2) * Math.PI) * 40, taken: false });
       }
-      x += w + 220 + rand() * 200;
+      x += w + 320 + rand() * 240;  // pit
     } else {
       const w = 26 + Math.floor(rand() * 18);
       const h = 30 + Math.floor(rand() * 26);
       obstacles.push({ type: "spike", x, w, h });
       collectibles.push({ x: x - 90, y: 240, taken: false });
       collectibles.push({ x: x + w + 90, y: 240, taken: false });
-      x += w + 180 + rand() * 180;
+      x += w + 280 + rand() * 220;  // spike
     }
   }
   return { obstacles, collectibles, platforms, totalWidth, speed };
@@ -127,19 +129,26 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
   const H = canvas.height;
 
   const world = buildLevel(level, duration, beatTimes);
-  const sprites = { frames: [], toilet: null };
-  const load = (n) => { const i = new Image(); i.onload = () => { sprites.frames[n] = i; }; i.src = `/art/characters/${level.id}-${n + 1}.png`; };
+  const sprites = { frames: [], toilet: null, toiletOpen: null };
+  const load = (n) => { const i = new Image(); i.onload = () => { sprites.frames[n] = i; }; i.src = `/art/${level.id}-${n + 1}.png`; };
   load(0); load(1)
   // Optional prop sprite for bathroom toilets. Falls back to canvas drawing if missing.
   const toiletImg = new Image();
   toiletImg.onload = () => {
     sprites.toilet = toiletImg;
-    console.log("[soulbound] toilet sprite loaded:", toiletImg.naturalWidth, "x", toiletImg.naturalHeight);
+    window.__sb_toilet = { status: "loaded", w: toiletImg.naturalWidth, h: toiletImg.naturalHeight, src: toiletImg.src };
+    console.log("%c[soulbound] toilet sprite LOADED", "color:#7cc06a", window.__sb_toilet);
   };
   toiletImg.onerror = (e) => {
-    console.warn("[soulbound] toilet sprite FAILED to load at", toiletImg.src, e);
+    window.__sb_toilet = { status: "error", src: toiletImg.src };
+    console.warn("%c[soulbound] toilet sprite FAILED", "color:#EF476F", window.__sb_toilet, e);
   };
-  toiletImg.src = "/art/props/toilet.png";
+  toiletImg.src = "/art/props/toilet.png?v=" + Date.now();
+
+  const toiletOpenImg = new Image();
+  toiletOpenImg.onload = () => { sprites.toiletOpen = toiletOpenImg; };
+  toiletOpenImg.onerror = () => { console.warn("[soulbound] toilet-open sprite missing at", toiletOpenImg.src); };
+  toiletOpenImg.src = "/art/props/toilet-open.png?v=" + Date.now();
   const player = {
     x: 120,
     y: H - GROUND_HEIGHT - 82,
@@ -162,6 +171,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     total: world.collectibles.length,
     soulHealth: 3,
     keys: { left: false, right: false, jump: false },
+    splatters: [], // brown blobs stuck to the screen from poop hits
     world,
   };
 
@@ -173,6 +183,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     world.collectibles.forEach(c => (c.taken = false));
     state.soulHealth = 3;
     state.finished = false;
+    state.splatters = [];
   }
 
   function keyDown(e) {
@@ -208,19 +219,82 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
 
     function hitSpike(px, py, pw, ph) {
     for (const o of world.obstacles) {
-      if (o.type === "spike") {
-        const sy = H - GROUND_HEIGHT - o.h;
-        if (px + pw > o.x && px < o.x + o.w && py + ph > sy) return o;
-      } else if (o.type === "flyer" && o._px !== undefined) {
-        const dt = state.elapsed - o.spawnT;
-        if (dt < -1.0 || dt > 0.5) continue;
-        // Flyer is visible; check AABB using stored screen pos + camera
-        const wx = o._px + state.cameraX;
-        const wy = o._py;
-        if (px + pw > wx && px < wx + 22 && py + ph > wy && py < wy + 22) return o;
-      }
+      if (o.type !== "spike") continue;
+      const sy = H - GROUND_HEIGHT - o.h;
+      if (px + pw > o.x && px < o.x + o.w && py + ph > sy) return o;
     }
     return null;
+  }
+
+  function hitFlyer(px, py, pw, ph) {
+    for (const o of world.obstacles) {
+      if (o.type !== "flyer" || o._px === undefined || o._splashed) continue;
+      const dt = state.elapsed - o.spawnT;
+      if (dt < -1.0 || dt > 0) continue;
+      const wx = o._px + state.cameraX;
+      const wy = o._py;
+      if (px + pw > wx && px < wx + 22 && py + ph > wy && py < wy + 22) return o;
+    }
+    return null;
+  }
+
+  function spawnSplatters(count) {
+    const now = performance.now();
+    const MAX = 14;
+    while (state.splatters.length + count > MAX && state.splatters.length > 0) {
+      state.splatters.shift(); // evict oldest
+    }
+    const browns = ["#4a2610", "#6b3a1e", "#5a2f16", "#3a1d0c"];
+    for (let i = 0; i < count; i++) {
+      const cx = 60 + Math.random() * (W - 120);
+      const cy = 40 + Math.random() * (H - 120);
+      const size = 26 + Math.random() * 42;
+      const drops = [];
+      const nd = 3 + Math.floor(Math.random() * 4);
+      for (let j = 0; j < nd; j++) {
+        drops.push({
+          dx: (Math.random() - 0.5) * size * 1.8,
+          dy: (Math.random() - 0.5) * size * 1.8,
+          r: 3 + Math.random() * 9,
+        });
+      }
+      state.splatters.push({
+        x: cx, y: cy,
+        rx: size, ry: size * (0.55 + Math.random() * 0.5),
+        rot: Math.random() * Math.PI * 2,
+        color: browns[Math.floor(Math.random() * browns.length)],
+        baseAlpha: 0.5, // capped so the screen never becomes impossible to see through
+        t0: now,
+        life: 6.5,
+        drops,
+      });
+    }
+  }
+
+  function drawSplatters() {
+    if (state.splatters.length === 0) return;
+    const now = performance.now();
+    for (let i = state.splatters.length - 1; i >= 0; i--) {
+      const s = state.splatters[i];
+      const age = (now - s.t0) / 1000;
+      if (age >= s.life) { state.splatters.splice(i, 1); continue; }
+      const fade = 1 - age / s.life;
+      ctx.save();
+      ctx.globalAlpha = s.baseAlpha * fade;
+      ctx.fillStyle = s.color;
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rot);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s.rx, s.ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.rotate(-s.rot);
+      for (const d of s.drops) {
+        ctx.beginPath();
+        ctx.arc(d.dx, d.dy, d.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   function drawBathroomScene() {
@@ -353,15 +427,20 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       if (sx + o.w < -20 || sx > W + 20) continue;
       const sy = H - GROUND_HEIGHT - o.h;
       if (bathroom) {
+        // Decide which frame to draw: seat-open while THIS toilet's poop is airborne, closed otherwise.
+        let toiletFrame = sprites.toilet;
+        if (o._launcher && o._flyer && sprites.toiletOpen) {
+          const fdt = state.elapsed - o._flyer.spawnT;
+          if (fdt >= -1.0 && fdt < 0) toiletFrame = sprites.toiletOpen;
+        }
         // Use custom sprite if loaded, otherwise fall back to programmatic drawing.
-        if (sprites.toilet) {
+        if (toiletFrame) {
           const drawW = 48;      // rendered width  in world pixels
           const drawH = 48;      // rendered height in world pixels
-          // Center sprite horizontally on the collision box, sit its base on the ground.
           const dx = sx + o.w / 2 - drawW / 2;
           const dy = H - GROUND_HEIGHT - drawH;
           ctx.imageSmoothingEnabled = false;
-          ctx.drawImage(sprites.toilet, dx, dy, drawW, drawH);
+          ctx.drawImage(toiletFrame, dx, dy, drawW, drawH);
         } else {
           // ---- fallback: original canvas-drawn toilet ----
           const bx = sx - 8;
@@ -398,12 +477,13 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       if (sx + 40 < 0 || sx > W + 40) continue;
       // arc trajectory: appears 0.4s before beat time, peaks at beat, lands 0.4s after
       const dt = state.elapsed - o.spawnT;
-      const life = 0.8; // total visible time
-      // Visible 1.5s: 1s ascending from a toilet ahead, 0.5s descending onto player
-      if (dt < -1.0 || dt > 0.5) continue;
+      // Poop erupts straight up from the toilet, peaks, and lands back in the bowl at dt=0.
+      // Clipped so it never goes past the ground line.
+      const life = 1.0;
+      if (dt < -1.0 || dt > 0) continue;
       const p = (dt + 1.0) / life; // 0..1
+      if (p >= 1) continue; // landed — hide it
       const arcY = -110 * Math.sin(p * Math.PI);
-      // Straight vertical launch: no horizontal offset.
       const cx = sx + 11;
       const cy = H - GROUND_HEIGHT - 20 + arcY;
       // poop: brown swirls
@@ -587,9 +667,15 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       player.onGround = false;
     }
 
-    // spike
+    // spike (toilet) — still a life-losing obstacle
     if (hitSpike(player.x, player.y, player.w, player.h)) {
       loseHealth();
+    }
+    // poop hit — no damage, just brown splatter across the screen
+    const flyer = hitFlyer(player.x, player.y, player.w, player.h);
+    if (flyer) {
+      flyer._splashed = true;
+      spawnSplatters(6);
     }
 
     // collectibles
@@ -698,6 +784,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       // flash
       if (Math.floor(performance.now() / 60) % 2 === 0) drawPlayer();
     }
+    drawSplatters();
   }
 
   let rafId = 0;
