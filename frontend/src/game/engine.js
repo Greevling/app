@@ -90,12 +90,15 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
   const H = canvas.height;
 
   const world = buildLevel(level, duration, beatTimes);
+  const sprites = { frames: [] };
+  const load = (n) => { const i = new Image(); i.onload = () => { sprites.frames[n] = i; }; i.src = `/art/characters/${level.id}-${n + 1}.png`; };
+  load(0); load(1)
   const player = {
     x: 120,
-    y: H - GROUND_HEIGHT - 40,
+    y: H - GROUND_HEIGHT - 82,
     vy: 0,
-    w: 26,
-    h: 40,
+    w: 54,
+    h: 82,
     onGround: true,
     dead: false,
   };
@@ -411,6 +414,23 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
   }
 
   function drawPlayer() {
+    if (sprites.frames[0] && sprites.frames[1]) {
+      const px = player.x - state.cameraX;
+      const py = player.y;
+      const frame = Math.floor(state.elapsed * 8) % 2;
+      const im = sprites.frames[frame];
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(im, px, py, player.w, player.h);
+      const fh = 6 + Math.sin(state.elapsed * 10) * 2;
+      ctx.fillStyle = level.palette.accent;
+      ctx.shadowColor = level.palette.accent;
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(px + player.w / 2, py - 6 - fh, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      return;
+    }
     const px = player.x - state.cameraX;
     const py = player.y;
     // soul aura
