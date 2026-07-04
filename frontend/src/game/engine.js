@@ -2,11 +2,14 @@
 // Player auto-runs across a procedurally generated level tuned to song duration.
 // Space/Up to jump. Left/Right to nudge speed.
 
-const GRAVITY = 1500;      // px/s^2
-const JUMP_VELOCITY = -620; // px/s
-const BASE_SPEED = 220;     // px/s
+const GRAVITY = 1500;         // px/s^2
+const JUMP_VELOCITY = -620;   // px/s (first jump - from ground/platform)
+const JUMP_VELOCITY_2 = -470; // px/s (second jump - slightly weaker)
+const BASE_SPEED = 220;       // px/s
 const NUDGE = 90;
 const GROUND_HEIGHT = 80;
+const MAX_JUMPS = 2;          // double jump
+
 
 // Deterministic pseudo random from seed
 function mulberry32(seed) {
@@ -25,6 +28,39 @@ function buildLevel(level, duration, beatTimes) {
 
   const obstacles = [];
   const collectibles = [];
+  const platforms = [];
+
+  // ---- Procedural floating platforms (independent of beat map) ----
+  // Placed so top surface is reachable (max jump apex ~128px above stand height)
+  // Ground stand y ~= 238. Player h=82. Max reachable top y ~ 130.
+  // Platform top y range: 150..215 (safely reachable, safely above head when standing).
+  const P_MIN_Y = 150;
+  const P_MAX_Y = 215;
+  const P_H = 14;
+  {
+    let px = 700;
+    while (px < totalWidth - 500) {
+      if (rand() < 0.72) {
+        const pw = 80 + Math.floor(rand() * 80);
+        const py = P_MIN_Y + Math.floor(rand() * (P_MAX_Y - P_MIN_Y));
+        platforms.push({ x: px, y: py, w: pw, h: P_H });
+        // Reward: 85% chance to place collectible(s) above the platform.
+        // Wide platforms get two, spaced across the top; narrow ones get one centered.
+        if (rand() < 0.85) {
+          const cy = py - 20;
+          if (pw >= 120) {
+            collectibles.push({ x: px + pw * 0.28, y: cy, taken: false });
+            collectibles.push({ x: px + pw * 0.72, y: cy, taken: false });
+          } else {
+            collectibles.push({ x: px + pw / 2, y: cy, taken: false });
+          }
+        }
+        px += pw + 210 + rand() * 180;
+      } else {
+        px += 260 + rand() * 220;
+      }
+    }
+  }
 
   if (beatTimes && beatTimes.length > 0) {
     let lastX = 0;
@@ -43,11 +79,12 @@ function buildLevel(level, duration, beatTimes) {
         for (let j = 0; j < 3; j++) collectibles.push({ x: x + 10 + j * (w / 3), y: midY - Math.sin((j / 2) * Math.PI) * 40, taken: false });
         lastX = x + w;
       } else if (kind === "flyer") {
-        // spawns from a toilet, arcs up and lands
+        // Toilet flushes: poop erupts straight up from the bowl and falls back onto it.
         obstacles.push({ type: "flyer", x, w: 22, h: 22, spawnT: t });
-        // draw a small stationary toilet ahead of the landing spot as the launch source
-        obstacles.push({ type: "spike", x: x - 200, w: 30, h: 24, _launcher: true });
-        collectibles.push({ x: x - 90, y: 200, taken: false });
+        // Launcher toilet sits at the SAME x as the poop (visually aligned under it).
+        obstacles.push({ type: "spike", x: x - 4, w: 30, h: 24, _launcher: true });
+        // Burger placed BEFORE the toilet so player is baited into the danger zone.
+        collectibles.push({ x: x - 110, y: 240, taken: false });
         lastX = x + 60;
       } else {
         const w = 26 + Math.floor(rand() * 14);
@@ -57,7 +94,7 @@ function buildLevel(level, duration, beatTimes) {
         lastX = x + w;
       }
     }
-    return { obstacles, collectibles, totalWidth, speed };
+    return { obstacles, collectibles, platforms, totalWidth, speed };
   }
 
   let x = 500;
@@ -81,7 +118,7 @@ function buildLevel(level, duration, beatTimes) {
       x += w + 180 + rand() * 180;
     }
   }
-  return { obstacles, collectibles, totalWidth, speed };
+  return { obstacles, collectibles, platforms, totalWidth, speed };
 }
 
 export function createGame({ canvas, level, duration, beatTimes, onStateChange, onFinish, onDeath, onCollect }) {
@@ -90,9 +127,19 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
   const H = canvas.height;
 
   const world = buildLevel(level, duration, beatTimes);
-  const sprites = { frames: [] };
+  const sprites = { frames: [], toilet: null };
   const load = (n) => { const i = new Image(); i.onload = () => { sprites.frames[n] = i; }; i.src = `/art/characters/${level.id}-${n + 1}.png`; };
   load(0); load(1)
+  // Optional prop sprite for bathroom toilets. Falls back to canvas drawing if missing.
+  const toiletImg = new Image();
+  toiletImg.onload = () => {
+    sprites.toilet = toiletImg;
+    console.log("[soulbound] toilet sprite loaded:", toiletImg.naturalWidth, "x", toiletImg.naturalHeight);
+  };
+  toiletImg.onerror = (e) => {
+    console.warn("[soulbound] toilet sprite FAILED to load at", toiletImg.src, e);
+  };
+  toiletImg.src = "/art/props/toilet.png";
   const player = {
     x: 120,
     y: H - GROUND_HEIGHT - 82,
@@ -100,6 +147,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     w: 54,
     h: 82,
     onGround: true,
+    jumpsLeft: MAX_JUMPS,
     dead: false,
   };
 
@@ -120,6 +168,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
   function reset() {
     player.x = 120; player.y = H - GROUND_HEIGHT - 40; player.vy = 0;
     player.onGround = true; player.dead = false;
+    player.jumpsLeft = MAX_JUMPS;
     state.elapsed = 0; state.cameraX = 0; state.collected = 0;
     world.collectibles.forEach(c => (c.taken = false));
     state.soulHealth = 3;
@@ -132,9 +181,11 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     if (["ArrowUp", "Space", "KeyW"].includes(e.code)) {
       state.keys.jump = true;
       if (!state.running && !state.finished) { state.running = true; onStateChange?.("playing"); }
-      if (player.onGround && state.running && !state.paused) {
-        player.vy = JUMP_VELOCITY;
+      // Only trigger on the actual press (not OS key-repeat) so double-jump doesn't burn both jumps.
+      if (!e.repeat && state.running && !state.paused && !player.dead && player.jumpsLeft > 0) {
+        player.vy = player.onGround ? JUMP_VELOCITY : JUMP_VELOCITY_2;
         player.onGround = false;
+        player.jumpsLeft--;
       }
       e.preventDefault();
     }
@@ -302,26 +353,32 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       if (sx + o.w < -20 || sx > W + 20) continue;
       const sy = H - GROUND_HEIGHT - o.h;
       if (bathroom) {
-        // Toilet: bowl + tank + seat + water
-        const bx = sx - 8;
-        const bw = o.w + 16;
-        const bh = o.h;
-        // bowl (rounded rectangle-ish)
-        ctx.fillStyle = "#f4f2ee";
-        ctx.fillRect(bx, H - GROUND_HEIGHT - bh * 0.55, bw, bh * 0.55);
-        ctx.fillRect(bx + 4, H - GROUND_HEIGHT - bh * 0.6, bw - 8, 6);
-        // tank
-        const tankH = bh * 0.5;
-        ctx.fillRect(bx + bw * 0.15, H - GROUND_HEIGHT - bh, bw * 0.7, tankH);
-        // water
-        ctx.fillStyle = "#7cc7f0";
-        ctx.fillRect(bx + 6, H - GROUND_HEIGHT - bh * 0.5, bw - 12, 6);
-        // shadow line
-        ctx.fillStyle = "rgba(0,0,0,0.15)";
-        ctx.fillRect(bx, H - GROUND_HEIGHT - 2, bw, 2);
-        // seat highlight
-        ctx.fillStyle = "#d8d5cf";
-        ctx.fillRect(bx, H - GROUND_HEIGHT - bh * 0.6, bw, 2);
+        // Use custom sprite if loaded, otherwise fall back to programmatic drawing.
+        if (sprites.toilet) {
+          const drawW = 48;      // rendered width  in world pixels
+          const drawH = 48;      // rendered height in world pixels
+          // Center sprite horizontally on the collision box, sit its base on the ground.
+          const dx = sx + o.w / 2 - drawW / 2;
+          const dy = H - GROUND_HEIGHT - drawH;
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(sprites.toilet, dx, dy, drawW, drawH);
+        } else {
+          // ---- fallback: original canvas-drawn toilet ----
+          const bx = sx - 8;
+          const bw = o.w + 16;
+          const bh = o.h;
+          ctx.fillStyle = "#f4f2ee";
+          ctx.fillRect(bx, H - GROUND_HEIGHT - bh * 0.55, bw, bh * 0.55);
+          ctx.fillRect(bx + 4, H - GROUND_HEIGHT - bh * 0.6, bw - 8, 6);
+          const tankH = bh * 0.5;
+          ctx.fillRect(bx + bw * 0.15, H - GROUND_HEIGHT - bh, bw * 0.7, tankH);
+          ctx.fillStyle = "#7cc7f0";
+          ctx.fillRect(bx + 6, H - GROUND_HEIGHT - bh * 0.5, bw - 12, 6);
+          ctx.fillStyle = "rgba(0,0,0,0.15)";
+          ctx.fillRect(bx, H - GROUND_HEIGHT - 2, bw, 2);
+          ctx.fillStyle = "#d8d5cf";
+          ctx.fillRect(bx, H - GROUND_HEIGHT - bh * 0.6, bw, 2);
+        }
       } else {
         ctx.fillStyle = "#EF476F";
         ctx.beginPath();
@@ -346,9 +403,8 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       if (dt < -1.0 || dt > 0.5) continue;
       const p = (dt + 1.0) / life; // 0..1
       const arcY = -110 * Math.sin(p * Math.PI);
-      // shift start position: launch from a "toilet" 200px ahead of landing point
-      const launchOffset = -200 * (1 - p);
-      const cx = sx + 11 + launchOffset;
+      // Straight vertical launch: no horizontal offset.
+      const cx = sx + 11;
       const cy = H - GROUND_HEIGHT - 20 + arcY;
       // poop: brown swirls
       ctx.fillStyle = "#6b3a1e";
@@ -486,22 +542,49 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
 
     // gravity
     player.vy += GRAVITY * dt;
+    const prevY = player.y;
     player.y += player.vy * dt;
+
+    // Platform collisions — one-way: only collide when landing on top.
+    // Head-bumps from below pass straight through with no damage.
+    let landedOnPlatform = false;
+    for (const p of world.platforms) {
+      // Horizontal overlap
+      if (player.x + player.w <= p.x || player.x >= p.x + p.w) continue;
+      // Land on top: was above previous frame, now crossing/at top surface, moving down
+      if (player.vy >= 0 && prevY + player.h <= p.y && player.y + player.h >= p.y) {
+        player.y = p.y - player.h;
+        player.vy = 0;
+        landedOnPlatform = true;
+        break;
+      }
+    }
 
     const floorY = H - GROUND_HEIGHT - player.h;
     // detect pit
     const centerX = player.x + player.w / 2;
     const overPit = inPit(centerX);
-    if (!overPit && player.y >= floorY) {
-      player.y = floorY;
-      player.vy = 0;
-      player.onGround = true;
-    } else if (overPit) {
-      // no floor
-      player.onGround = false;
-      if (player.y > H + 40) {
-        loseHealth();
+    let landedOnGround = false;
+    if (!landedOnPlatform) {
+      if (!overPit && player.y >= floorY) {
+        player.y = floorY;
+        player.vy = 0;
+        landedOnGround = true;
+      } else if (overPit) {
+        // no floor
+        if (player.y > H + 40) {
+          loseHealth();
+        }
       }
+    }
+
+    // Update grounded / jump refill
+    const grounded = landedOnPlatform || landedOnGround;
+    if (grounded) {
+      if (!player.onGround) player.jumpsLeft = MAX_JUMPS;
+      player.onGround = true;
+    } else {
+      player.onGround = false;
     }
 
     // spike
@@ -551,13 +634,62 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       player.x = Math.max(60, player.x - 220);
       player.y = H - GROUND_HEIGHT - player.h;
       player.vy = 0;
+      player.onGround = true;
+      player.jumpsLeft = MAX_JUMPS;
       player.dead = false;
     }, 250);
+  }
+
+  function drawPlatforms(camX) {
+    const bathroom = level.scene === "bathroom";
+    for (const p of world.platforms) {
+      const sx = p.x - camX;
+      if (sx + p.w < -20 || sx > W + 20) continue;
+      if (bathroom) {
+        // marble slab matching the bathroom floor
+        ctx.fillStyle = "#e8e6e1";
+        ctx.fillRect(sx, p.y, p.w, p.h);
+        // top polished edge
+        ctx.fillStyle = "#8a95a3";
+        ctx.fillRect(sx, p.y, p.w, 2);
+        // bottom shadow
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillRect(sx, p.y + p.h - 2, p.w, 2);
+        // subtle veining
+        ctx.strokeStyle = "rgba(140,140,150,0.35)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx + 6, p.y + Math.floor(p.h / 2));
+        ctx.lineTo(sx + p.w - 8, p.y + Math.floor(p.h / 2) + 1);
+        ctx.stroke();
+      } else {
+        // pixel block themed to level palette
+        ctx.fillStyle = level.palette.ground;
+        ctx.fillRect(sx, p.y, p.w, p.h);
+        // accent-glowing top rim
+        ctx.fillStyle = level.palette.accent;
+        ctx.fillRect(sx, p.y, p.w, 2);
+        // side highlight
+        ctx.fillStyle = "rgba(255,255,255,0.06)";
+        ctx.fillRect(sx, p.y + 2, 2, p.h - 4);
+        // bottom shadow
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.fillRect(sx, p.y + p.h - 2, p.w, 2);
+        // faint glow above rim
+        ctx.save();
+        ctx.shadowColor = level.palette.accent;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = level.palette.accent;
+        ctx.fillRect(sx, p.y, p.w, 1);
+        ctx.restore();
+      }
+    }
   }
 
   function render() {
     drawBg();
     drawGround(state.cameraX);
+    drawPlatforms(state.cameraX);
     drawObstacles(state.cameraX);
     drawCollectibles(state.cameraX);
     drawFinishLine(state.cameraX);

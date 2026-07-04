@@ -36,7 +36,7 @@ LEVELS = [
         "index": 1,
         "name": "Ajkish",
         "role": "The Pooper",
-        "life_theme": "Poop when you get the chance",
+        "life_theme": "I just like pooping",
         "story_intro": "Ajkish poops on average 6 times a day which results in him having to eat a lot more than the average human to keep up with his bowel movements. Help Ajkish aquire the calories needed for his body to work!",
         "story_outro": "Ajkish needs were satisfied. He celebrated by going to the toilet.",
         "collect_label": "Hamburgers",
