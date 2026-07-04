@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Play, List, Info, Upload } from "lucide-react";
+import { Play, List, Info } from "lucide-react";
 
 export default function MainMenu() {
   return (
@@ -72,13 +72,6 @@ export default function MainMenu() {
               className="group inline-flex items-center justify-center gap-3 px-8 py-4 pixel-corners border-2 border-soul-ash text-soul-ink font-heading text-xl uppercase tracking-wider hover:border-soul-amber hover:text-soul-amber transition-colors"
             >
               <List className="w-5 h-5" /> Level Select
-            </Link>
-            <Link
-              to="/upload"
-              data-testid="menu-upload-btn"
-              className="group inline-flex items-center justify-center gap-3 px-8 py-4 pixel-corners border-2 border-soul-ash text-soul-ink font-heading text-xl uppercase tracking-wider hover:border-soul-rose hover:text-soul-rose transition-colors"
-            >
-              <Upload className="w-5 h-5" /> Upload Songs
             </Link>
           </div>
         </div>

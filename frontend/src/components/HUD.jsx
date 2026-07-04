@@ -1,4 +1,4 @@
-import { Pause } from "lucide-react";
+import { Pause, Volume2, VolumeX } from "lucide-react";
 
 const formatTime = (s) => {
   const m = Math.floor(s / 60).toString().padStart(1, "0");
@@ -15,6 +15,8 @@ export default function HUD({
   soulHealth,
   onPause,
   status,
+  volume = 0.15,
+  onVolumeChange,
 }) {
   const progress = Math.min(100, (elapsed / duration) * 100);
   const remaining = Math.max(0, duration - elapsed);
@@ -67,7 +69,7 @@ export default function HUD({
           </div>
         </div>
 
-        {/* Right: Collectibles + Pause */}
+        {/* Right: Collectibles + Volume + Pause */}
         <div className="pointer-events-auto flex items-center gap-3">
           <div className="pixel-corners bg-soul-surface/85 border border-soul-ash px-4 py-3 backdrop-blur-md flex items-center gap-2">
             <span className="text-xl leading-none" aria-hidden>{level.collect_icon}</span>
@@ -75,6 +77,27 @@ export default function HUD({
               {collected}
               <span className="text-soul-mute text-sm">/{totalCollectibles}</span>
             </span>
+          </div>
+          <div className="pixel-corners bg-soul-surface/85 border border-soul-ash px-3 py-3 backdrop-blur-md flex items-center gap-2" data-testid="hud-volume">
+            <button
+              onClick={() => onVolumeChange?.(volume > 0 ? 0 : 0.4)}
+              className="text-soul-ink hover:text-soul-amber transition-colors"
+              aria-label={volume > 0 ? "Mute" : "Unmute"}
+              data-testid="hud-volume-toggle"
+            >
+              {volume > 0 ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => onVolumeChange?.(Number(e.target.value))}
+              className="w-20 accent-soul-amber"
+              aria-label="Volume"
+              data-testid="hud-volume-slider"
+            />
           </div>
           <button
             onClick={onPause}

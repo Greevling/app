@@ -5,6 +5,7 @@ import { ArrowLeft, RotateCcw, ArrowRight, Home } from "lucide-react";
 import HUD from "@/components/HUD";
 import { createGame } from "@/game/engine";
 import { fetchLevel, postScore, API } from "@/lib/api";
+import { analyzeKickDrums } from "@/game/beats";
 
 export default function Game() {
   const { levelId } = useParams();
@@ -18,14 +19,34 @@ export default function Game() {
   const [paused, setPaused] = useState(false);
   const [result, setResult] = useState(null);
   const [showIntro, setShowIntro] = useState(true);
+  const [beatTimes, setBeatTimes] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [volume, setVolume] = useState(() => {
+    const v = typeof window !== "undefined" ? window.localStorage.getItem("sb_volume") : null;
+    return v !== null ? Number(v) : 0.15;
+  });
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+    if (typeof window !== "undefined") window.localStorage.setItem("sb_volume", String(volume));
+  }, [volume]);
 
   const duration = level?.song?.duration_seconds || level?.default_song_seconds || 90;
 
-  // Load level metadata
+  // Load level metadata + analyze audio for kick beats
   useEffect(() => {
     let cancelled = false;
     fetchLevel(levelId)
-      .then((d) => { if (!cancelled) setLevel(d); })
+      .then(async (d) => {
+        if (cancelled) return;
+        setLevel(d);
+        if (d.song?.url) {
+          setAnalyzing(true);
+          const url = `${process.env.REACT_APP_BACKEND_URL}${d.song.url}`;
+          const beats = await analyzeKickDrums(url);
+          if (!cancelled) { setBeatTimes(beats); setAnalyzing(false); }
+        }
+      })
       .catch(() => toast.error("Level not found"));
     return () => { cancelled = true; };
   }, [levelId]);
@@ -42,6 +63,7 @@ export default function Game() {
       canvas,
       level,
       duration,
+      beatTimes: beatTimes || undefined,
       onStateChange: (status) => {
         setHud((h) => ({ ...h, status }));
         if (status === "playing" && audioRef.current && level.song?.url) {
@@ -70,6 +92,7 @@ export default function Game() {
       },
     });
     engineRef.current = engine;
+    if (!engine) return () => {};
 
     const tick = setInterval(() => setHud((h) => ({ ...h, ...engine.getState() })), 100);
 
@@ -81,7 +104,7 @@ export default function Game() {
     return () => {
       clearInterval(tick);
       window.removeEventListener("keydown", escHandler);
-      engine.destroy();
+      engine?.destroy?.();
     };
   }, [level, showIntro, duration]);
 
@@ -152,6 +175,8 @@ export default function Game() {
               soulHealth={hud.soulHealth}
               onPause={togglePause}
               status={hud.status}
+              volume={volume}
+              onVolumeChange={setVolume}
             />
           )}
         </div>
@@ -175,6 +200,11 @@ export default function Game() {
             <p className="font-body text-lg leading-relaxed text-soul-ink/90 mb-10">
               {level.story_intro}
             </p>
+            {analyzing && (
+              <div className="mb-4 inline-block px-4 py-2 border border-soul-amber/40 text-soul-amber font-mono text-xs" data-testid="analyzing-song">
+                Analyzing kick drums…
+              </div>
+            )}
             {!level.song && (
               <div className="mb-6 inline-block px-4 py-2 border border-soul-ash text-soul-mute text-xs font-mono">
                 No song uploaded. Using a {Math.round(duration)}s placeholder timer.

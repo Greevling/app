@@ -36,9 +36,8 @@ export default function About() {
         </div>
 
         <h2 className="font-heading text-3xl uppercase text-soul-ink mb-4">Your Own Soundtrack</h2>
-        <p className="font-body text-soul-mute leading-relaxed mb-6">
-          Upload your own songs on the <Link to="/upload" className="text-soul-amber underline">upload page</Link>. Each level&apos;s length becomes exactly the length of the song you bind to it.
-          The soul cannot fail if the story does not end.
+         <p className="font-body text-soul-mute leading-relaxed mb-6">
+          Each level runs for exactly the length of its song. When the last note fades, the mission is over — for better or worse.
         </p>
       </div>
     </div>

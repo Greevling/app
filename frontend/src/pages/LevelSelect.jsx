@@ -25,9 +25,6 @@ export default function LevelSelect() {
           <Link to="/" className="inline-flex items-center gap-2 font-body text-[11px] uppercase tracking-[0.3em] text-soul-mute hover:text-soul-amber transition-colors" data-testid="back-menu-btn">
             <ArrowLeft className="w-4 h-4" /> Back
           </Link>
-          <Link to="/upload" data-testid="upload-link" className="font-body text-[11px] uppercase tracking-[0.3em] text-soul-mute hover:text-soul-amber transition-colors">
-            Upload Songs →
-          </Link>
         </div>
 
         <header className="mb-12 animate-fadeInUp">
@@ -43,15 +40,13 @@ export default function LevelSelect() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6" data-testid="levels-grid">
             {levels.map((lvl, i) => {
-              const isHero = i === 0;
+              const isHero = false;
               return (
                 <Link
                   key={lvl.id}
                   to={`/play/${lvl.id}`}
                   data-testid={`level-card-${lvl.id}`}
-                  className={`group relative flex flex-col p-6 lg:p-8 border border-soul-ash bg-soul-surface/80 backdrop-blur-md transition-all duration-500 hover:-translate-y-1 hover:border-soul-amber overflow-hidden cursor-pointer pixel-corners ${
-                    isHero ? "md:col-span-8 md:row-span-2 min-h-[280px]" : "md:col-span-4"
-                  }`}
+                  className="group relative flex flex-col p-6 lg:p-8 border border-soul-ash bg-soul-surface/80 backdrop-blur-md transition-all duration-500 hover:-translate-y-1 hover:border-soul-amber overflow-hidden cursor-pointer pixel-corners md:col-span-4 min-h-[260px]"
                   style={{
                     background: `linear-gradient(135deg, ${lvl.palette.sky} 0%, #10121C 100%)`,
                   }}

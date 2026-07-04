@@ -34,16 +34,18 @@ LEVELS = [
     {
         "id": "elena-painter",
         "index": 1,
-        "name": "Elena",
-        "role": "The Painter",
-        "life_theme": "Finding Color in Grey",
-        "story_intro": "Elena hasn't touched her brushes in three years. Her studio gathers dust. Help her paint one last canvas before dusk.",
-        "story_outro": "The color returned to her hands. She wept, and it was beautiful.",
-        "collect_label": "Paint Drops",
-        "collect_icon": "🎨",
-        "default_song_seconds": 90,
+        "name": "Ajkish",
+        "role": "The Pooper",
+        "life_theme": "Poop when you get the chance",
+        "story_intro": "Ajkish poops on average 6 times a day which results in him having to eat a lot more than the average human to keep up with his bowel movements. Help Ajkish aquire the calories needed for his body to work!",
+        "story_outro": "Ajkish needs were satisfied. He celebrated by going to the toilet.",
+        "collect_label": "Hamburgers",
+        "collect_icon": "🍔",
+        "default_song_seconds": 135,
         "palette": {"sky": "#2a1e3c", "ground": "#3d2b4a", "accent": "#EF476F"},
-        "seed": 12
+        "seed": 12,
+        "scene": "bathroom",
+        "preset_song": {"filename": "ajkish.mp3", "duration_seconds": 135}
     },
     {
         "id": "marcus-runner",
@@ -154,6 +156,13 @@ async def get_levels():
                 "url": f"/api/songs/{lvl['id']}/audio",
                 "original_name": doc["original_name"],
             }
+        elif lvl.get("preset_song"):
+            preset = lvl["preset_song"]
+            merged["song"] = {
+                "duration_seconds": preset["duration_seconds"],
+                "url": f"/api/songs/{lvl['id']}/audio",
+                "original_name": preset["filename"],
+            }
         else:
             merged["song"] = None
         # best score
@@ -179,6 +188,13 @@ async def get_level(level_id: str):
             "duration_seconds": doc["duration_seconds"],
             "url": f"/api/songs/{level_id}/audio",
             "original_name": doc["original_name"],
+        }
+    elif lvl.get("preset_song"):
+        preset = lvl["preset_song"]
+        result["song"] = {
+            "duration_seconds": preset["duration_seconds"],
+            "url": f"/api/songs/{level_id}/audio",
+            "original_name": preset["filename"],
         }
     else:
         result["song"] = None
@@ -242,12 +258,18 @@ async def upload_song(
 
 @api_router.get("/songs/{level_id}/audio")
 async def get_song_audio(level_id: str):
+    lvl = next((item for item in LEVELS if item["id"] == level_id), None)
     doc = await db.songs.find_one({"level_id": level_id}, {"_id": 0})
-    if not doc:
-        raise HTTPException(404, "No song uploaded for this level")
-    path = UPLOAD_DIR / doc["filename"]
+    filename = None
+    if doc:
+        filename = doc["filename"]
+    elif lvl and lvl.get("preset_song"):
+        filename = lvl["preset_song"]["filename"]
+    if not filename:
+        raise HTTPException(404, "No song for this level")
+    path = UPLOAD_DIR / filename
     if not path.exists():
-        raise HTTPException(404, "Audio file missing")
+        raise HTTPException(404, f"Audio file missing: {filename}")
     media_map = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".m4a": "audio/mp4"}
     ext = path.suffix.lower()
     return FileResponse(path, media_type=media_map.get(ext, "audio/mpeg"))
