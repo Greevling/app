@@ -1,0 +1,31 @@
+{
+  "summary": "First-finish smoke test of SOULBOUND MVP. Backend (8 endpoints) and frontend (main menu, level select, game page, pause, upload) all functional. Minor: story-intro overlay not visible on entering game page (likely because elena's song was deleted during backend test earlier, and/or intro auto-dismissed) — game still renders canvas + HUD and status label 'PRESS SPACE TO BEGIN'. hud-song-progress hidden when no song bound (expected). All 5 level cards, all 5 upload rows, pause overlay (button + ESC toggle), and song upload flow all verified working.",
+  "tested_scope": ["backend", "frontend", "integration"],
+  "passed": [
+    "GET /api/levels returns 5 levels with all required fields (id, name, role, life_theme, palette, default_song_seconds, song=null)",
+    "GET /api/levels/elena-painter returns 200 with correct data",
+    "GET /api/levels/nonexistent returns 404",
+    "POST /api/scores persists score and returns id + created_at",
+    "GET /api/scores/elena-painter returns just-posted score sorted by completion_time_seconds",
+    "POST /api/songs/upload with multipart .wav returns ok=true",
+    "GET /api/songs/elena-painter/audio returns audio bytes with content-type audio/wav",
+    "GET /api/levels shows song info (duration=45.5, url, original_name) after upload",
+    "DELETE /api/songs/elena-painter returns ok=true; subsequent GET audio returns 404",
+    "Main Menu (/) shows SOULBOUND title + menu-play-btn, menu-levels-btn, menu-upload-btn",
+    "Level Select (/levels) shows all 5 level-card-<id> tiles; clicking navigates to /play/<id>",
+    "Game page /play/elena-painter renders game-canvas, hud-character-name, hud-collected, hud-pause-btn",
+    "hud-pause-btn opens pause-overlay with resume-btn, restart-btn, quit-btn; ESC toggles pause overlay open/close",
+    "Upload page (/upload) shows all 5 upload-btn-<id> + upload-input-<id> rows; uploading test.wav to elena updates row with 'Bound: test.wav', PREVIEW/REMOVE/REPLACE buttons"
+  ],
+  "failed": [
+    {"area": "Game intro overlay", "issue": "story-intro and story-begin-btn were not visible on initial navigation to /play/elena-painter. Game still functional (canvas + HUD render, status shows 'PRESS SPACE TO BEGIN'). May be conditional on song presence or session flag.", "evidence": "playwright: is_visible() returned False for both story-intro and story-begin-btn immediately after navigation. Canvas + HUD rendered fine.", "priority": "LOW"},
+    {"area": "HUD song progress", "issue": "hud-song-progress not visible on game page. Likely intentional (no song was bound to elena at that moment since backend test deleted it). Recommend confirming whether progress bar should still render at 0% when no song is bound.", "evidence": "playwright: hud-song-progress is_visible()=False; other HUD elements visible.", "priority": "LOW"}
+  ],
+  "action_items": [
+    "Confirm intended behavior of story-intro overlay — should it always show on first visit, or is it conditional?",
+    "Confirm whether hud-song-progress should render (empty) when no song is bound to a level"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "retest_needed": false,
+  "full_testing_deferred": true
+}

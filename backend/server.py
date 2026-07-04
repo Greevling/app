@@ -1,17 +1,22 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Form
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import shutil
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import Optional, List
 import uuid
 from datetime import datetime, timezone
 
 
 ROOT_DIR = Path(__file__).parent
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
@@ -19,54 +24,250 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
-
-# Create a router with the /api prefix
+app = FastAPI(title="Soulbound API")
 api_router = APIRouter(prefix="/api")
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
+# ---------- Static Level Definitions ----------
+# Each level is a "body" the soul takes over.
+LEVELS = [
+    {
+        "id": "elena-painter",
+        "index": 1,
+        "name": "Elena",
+        "role": "The Painter",
+        "life_theme": "Finding Color in Grey",
+        "story_intro": "Elena hasn't touched her brushes in three years. Her studio gathers dust. Help her paint one last canvas before dusk.",
+        "story_outro": "The color returned to her hands. She wept, and it was beautiful.",
+        "collect_label": "Paint Drops",
+        "collect_icon": "🎨",
+        "default_song_seconds": 90,
+        "palette": {"sky": "#2a1e3c", "ground": "#3d2b4a", "accent": "#EF476F"},
+        "seed": 12
+    },
+    {
+        "id": "marcus-runner",
+        "index": 2,
+        "name": "Marcus",
+        "role": "The Runner",
+        "life_theme": "Outrunning Regret",
+        "story_intro": "Marcus runs every morning to escape a memory. Today, help him make it to the finish line he abandoned years ago.",
+        "story_outro": "He finally stopped running. And in stopping, he found peace.",
+        "collect_label": "Medals",
+        "collect_icon": "🏅",
+        "default_song_seconds": 75,
+        "palette": {"sky": "#1a2c3d", "ground": "#2b4a3d", "accent": "#FFD166"},
+        "seed": 27
+    },
+    {
+        "id": "yuki-poet",
+        "index": 3,
+        "name": "Yuki",
+        "role": "The Poet",
+        "life_theme": "Words Left Unsaid",
+        "story_intro": "Yuki writes letters she never sends. Tonight, help her deliver the one that matters most.",
+        "story_outro": "The envelope slid under the door. Nothing more needed to be said.",
+        "collect_label": "Letters",
+        "collect_icon": "✉️",
+        "default_song_seconds": 105,
+        "palette": {"sky": "#1c1930", "ground": "#2a2545", "accent": "#B0A0FF"},
+        "seed": 44
+    },
+    {
+        "id": "kofi-musician",
+        "index": 4,
+        "name": "Kofi",
+        "role": "The Musician",
+        "life_theme": "The Silent Symphony",
+        "story_intro": "Kofi lost his hearing at twenty-nine. He still hears music in his bones. Help him finish the symphony inside him.",
+        "story_outro": "The audience never heard it. But he did. Every single note.",
+        "collect_label": "Notes",
+        "collect_icon": "🎵",
+        "default_song_seconds": 120,
+        "palette": {"sky": "#2c1a1f", "ground": "#4a2b34", "accent": "#FFD166"},
+        "seed": 61
+    },
+    {
+        "id": "iris-astronomer",
+        "index": 5,
+        "name": "Iris",
+        "role": "The Astronomer",
+        "life_theme": "Chasing Stars",
+        "story_intro": "Iris watches the sky every night, waiting for a sign. Help her catch one before the dawn erases it.",
+        "story_outro": "She caught the star. It fit in her palm, and it was warm.",
+        "collect_label": "Stars",
+        "collect_icon": "⭐",
+        "default_song_seconds": 100,
+        "palette": {"sky": "#0d1533", "ground": "#1a2247", "accent": "#8FDCFF"},
+        "seed": 78
+    },
+]
+
+
+# ---------- Models ----------
+class ScoreCreate(BaseModel):
+    level_id: str
+    player_name: str = "Wanderer"
+    completion_time_seconds: float
+    song_duration_seconds: float
+    items_collected: int
+    completed: bool
+
+
+class Score(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    level_id: str
+    player_name: str
+    completion_time_seconds: float
+    song_duration_seconds: float
+    items_collected: int
+    completed: bool
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
+class SongMeta(BaseModel):
+    level_id: str
+    original_name: str
+    duration_seconds: float
+    filename: str
+    uploaded_at: str
+
+
+# ---------- Routes ----------
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Soulbound API online"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api_router.get("/levels")
+async def get_levels():
+    # Merge each level with its song info if any
+    result = []
+    for lvl in LEVELS:
+        doc = await db.songs.find_one({"level_id": lvl["id"]}, {"_id": 0})  # noqa
 
-# Include the router in the main app
+        merged = {**lvl}
+        if doc:
+            merged["song"] = {
+                "duration_seconds": doc["duration_seconds"],
+                "url": f"/api/songs/{lvl['id']}/audio",
+                "original_name": doc["original_name"],
+            }
+        else:
+            merged["song"] = None
+        # best score
+        best = await db.scores.find_one(
+            {"level_id": lvl["id"], "completed": True},
+            sort=[("completion_time_seconds", 1)],
+            projection={"_id": 0}
+        )
+        merged["best_score"] = best
+        result.append(merged)
+    return result
+
+
+@api_router.get("/levels/{level_id}")
+async def get_level(level_id: str):
+    lvl = next((item for item in LEVELS if item["id"] == level_id), None)
+    if not lvl:
+        raise HTTPException(404, "Level not found")
+    doc = await db.songs.find_one({"level_id": level_id}, {"_id": 0})
+    result = {**lvl}
+    if doc:
+        result["song"] = {
+            "duration_seconds": doc["duration_seconds"],
+            "url": f"/api/songs/{level_id}/audio",
+            "original_name": doc["original_name"],
+        }
+    else:
+        result["song"] = None
+    return result
+
+
+@api_router.post("/scores", response_model=Score)
+async def create_score(payload: ScoreCreate):
+    if not any(item["id"] == payload.level_id for item in LEVELS):
+        raise HTTPException(404, "Level not found")
+    score = Score(**payload.model_dump())
+    await db.scores.insert_one(score.model_dump())
+    return score
+
+
+@api_router.get("/scores/{level_id}")
+async def get_scores(level_id: str):
+    cursor = db.scores.find(
+        {"level_id": level_id, "completed": True},
+        {"_id": 0}
+    ).sort("completion_time_seconds", 1).limit(10)
+    return await cursor.to_list(10)
+
+
+@api_router.post("/songs/upload")
+async def upload_song(
+    level_id: str = Form(...),
+    duration_seconds: float = Form(...),
+    file: UploadFile = File(...),
+):
+    if not any(item["id"] == level_id for item in LEVELS):
+        raise HTTPException(404, "Level not found")
+
+    ext = Path(file.filename).suffix.lower() or ".mp3"
+    if ext not in {".mp3", ".wav", ".ogg", ".m4a"}:
+        raise HTTPException(400, "Unsupported audio format")
+
+    filename = f"{level_id}{ext}"
+    dest = UPLOAD_DIR / filename
+
+    # Remove any old file variants for this level
+    for old in UPLOAD_DIR.glob(f"{level_id}.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    meta = {
+        "level_id": level_id,
+        "original_name": file.filename,
+        "duration_seconds": duration_seconds,
+        "filename": filename,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.songs.update_one({"level_id": level_id}, {"$set": meta}, upsert=True)
+    return {"ok": True, "meta": meta, "url": f"/api/songs/{level_id}/audio"}
+
+
+@api_router.get("/songs/{level_id}/audio")
+async def get_song_audio(level_id: str):
+    doc = await db.songs.find_one({"level_id": level_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "No song uploaded for this level")
+    path = UPLOAD_DIR / doc["filename"]
+    if not path.exists():
+        raise HTTPException(404, "Audio file missing")
+    media_map = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".m4a": "audio/mp4"}
+    ext = path.suffix.lower()
+    return FileResponse(path, media_type=media_map.get(ext, "audio/mpeg"))
+
+
+@api_router.delete("/songs/{level_id}")
+async def delete_song(level_id: str):
+    doc = await db.songs.find_one({"level_id": level_id})
+    if not doc:
+        raise HTTPException(404, "No song uploaded")
+    path = UPLOAD_DIR / doc["filename"]
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
+    await db.songs.delete_one({"level_id": level_id})
+    return {"ok": True}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,12 +278,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

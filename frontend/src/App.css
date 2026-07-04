@@ -1,34 +1,35 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+.App { min-height: 100vh; background: #050508; }
+
+/* Typing effect for story intro */
+.typing {
+  overflow: hidden;
+  border-right: 2px solid #FFD166;
+  white-space: normal;
+  animation: blink 0.9s step-end infinite;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+@keyframes blink {
+  from, to { border-color: transparent; }
+  50% { border-color: #FFD166; }
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Progress bar shine */
+.song-progress-fill {
+  background: linear-gradient(90deg, #FFD166 0%, #FFB84D 100%);
+  box-shadow: 0 0 12px rgba(255,209,102,0.7);
 }
 
-.App-link {
-    color: #61dafb;
+.canvas-frame {
+  box-shadow:
+    inset 0 0 0 2px #222436,
+    0 0 30px rgba(255,209,102,0.15),
+    0 0 80px rgba(0,0,0,0.6);
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+/* Menu backdrop grid */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(255,209,102,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,209,102,0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
