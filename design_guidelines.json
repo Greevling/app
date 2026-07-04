@@ -1,0 +1,150 @@
+{
+  "theme": "Dark Cinematic + Retro Pixel",
+  "archetype": "Archetype 5 (Luxury/Cinematic/Moody) mixed with Retro Pixel aesthetics",
+  "design_philosophy": "Combine melancholic, poetic themes with 8-bit retro gaming aesthetics. High contrast, atmospheric neon glow over deep obsidian backgrounds. HUD should be minimalist, keeping focus on the Canvas game. Emphasize emotion over typical arcade bombast.",
+  "colors": {
+    "background": {
+      "main": "#050508",
+      "surface": "#10121C",
+      "surface_elevated": "#1A1D2B",
+      "overlay": "rgba(5, 5, 8, 0.85)"
+    },
+    "accents": {
+      "primary": "#FFD166",
+      "primary_glow": "rgba(255, 209, 102, 0.4)",
+      "secondary": "#EF476F",
+      "secondary_glow": "rgba(239, 71, 111, 0.4)"
+    },
+    "text": {
+      "primary": "#E0E2EB",
+      "secondary": "#8A8D9E",
+      "muted": "#4A4D5E"
+    },
+    "borders": {
+      "default": "#222436",
+      "active": "#FFD166"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "'Pixelify Sans', 'VT323', 'Press Start 2P', monospace",
+      "body": "'Outfit', 'Manrope', sans-serif"
+    },
+    "scale": {
+      "h1": "text-5xl sm:text-6xl md:text-7xl tracking-tighter font-heading uppercase drop-shadow-[0_0_10px_rgba(255,209,102,0.3)]",
+      "h2": "text-3xl sm:text-4xl lg:text-5xl tracking-tight font-heading uppercase",
+      "h3": "text-xl sm:text-2xl font-heading tracking-wide",
+      "body": "text-base md:text-lg font-body leading-relaxed",
+      "overline": "text-xs font-body uppercase tracking-[0.2em] text-text-secondary"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous spacing. Use bento-style grids for level select. High negative space for melancholic feel.",
+    "containers": "p-8 md:p-12 lg:p-16 max-w-7xl mx-auto",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-8",
+    "surface_strategy": "Grid Borders (The 'Technical' Look) mixed with Glassmorphism for overlays. 1px delicate inner stroke on cards to separate from background."
+  },
+  "components": {
+    "buttons": {
+      "primary": "group relative inline-flex items-center justify-center px-8 py-4 font-heading text-xl text-background-main bg-accents-primary hover:bg-white transition-all duration-300 shadow-[0_0_15px_rgba(255,209,102,0.4)] hover:shadow-[0_0_30px_rgba(255,209,102,0.8)] uppercase tracking-wider",
+      "secondary": "group inline-flex items-center justify-center px-8 py-4 font-heading text-xl text-text-primary border-2 border-borders-default hover:border-accents-primary hover:text-accents-primary hover:shadow-[inset_0_0_15px_rgba(255,209,102,0.2)] transition-all duration-300 uppercase tracking-wider",
+      "ghost": "text-text-secondary hover:text-text-primary font-body uppercase tracking-[0.2em] text-sm transition-colors duration-200"
+    },
+    "cards": {
+      "level_card": "relative flex flex-col p-6 lg:p-8 border border-borders-default bg-background-surface/80 backdrop-blur-md transition-all duration-500 hover:-translate-y-2 hover:border-accents-primary overflow-hidden group cursor-pointer",
+      "story_panel": "p-8 md:p-16 border-y border-borders-default bg-background-main/95 backdrop-blur-xl max-w-3xl mx-auto text-center"
+    },
+    "hud": {
+      "container": "fixed top-0 left-0 w-full p-6 flex justify-between items-start z-50 pointer-events-none",
+      "progress_bar_container": "w-48 sm:w-64 h-3 bg-background-surface border border-borders-default relative overflow-hidden",
+      "progress_bar_fill": "h-full bg-accents-primary shadow-[0_0_15px_rgba(255,209,102,0.8)] transition-all duration-300 ease-linear"
+    }
+  },
+  "motion": {
+    "crt_effect": "pointer-events-none fixed inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] opacity-[0.15]",
+    "soul_flicker": "animate-[pulse_3s_ease-in-out_infinite]",
+    "text_typing": "overflow-hidden whitespace-nowrap border-r-2 border-accents-primary animate-[typing_3s_steps(40,end),blink_0.75s_step-end_infinite]",
+    "fade_in_up": "opacity-0 translate-y-4 animate-[fadeInUp_0.8s_ease-out_forwards]"
+  },
+  "screens": {
+    "main_menu": {
+      "layout": "Flex column, centered content, high vertical spacing (gap-12). Hero logo takes up central focus.",
+      "background": "Cinematic dark background (media_assets[0]) heavily darkened with an ethereal glowing 'soul' particle system (or CSS radial gradients).",
+      "elements": [
+        "Title: 'SOULBOUND' (H1, huge scale, glowing)",
+        "Subtitle: 'Possess. Help. Transcend.' (Overline style)",
+        "Actions: Play Button (Primary), Level Select (Secondary), About (Ghost)"
+      ]
+    },
+    "level_select": {
+      "layout": "Tetris Bento Grid. Title at top. 1 Hero character card spans col-span-full md:col-span-8 row-span-2. Smaller characters span col-span-4 row-span-1.",
+      "elements": [
+        "Header: 'Select a Soul'",
+        "Cards contain: Character Portrait (pixel art placeholder), Name (H3), Life-Theme (Overline), Song Duration, Best Time."
+      ]
+    },
+    "in_game_hud": {
+      "layout": "Absolute overlay on Canvas.",
+      "elements": [
+        "Top-left: Current Character Portrait + Soul Health (Glowing orb indicator)",
+        "Top-center: Song Progress Bar (Neon amber fill)",
+        "Top-right: Collected memories/items (Pixel Icon + Text)"
+      ]
+    },
+    "pause_menu": {
+      "layout": "Fixed inset-0. Glassmorphism backdrop (backdrop-blur-xl bg-background-overlay). Vertically centered list of secondary buttons.",
+      "elements": ["Resume", "Restart Level", "Settings", "Abandon Body (Quit to Menu)"]
+    },
+    "level_complete": {
+      "layout": "Minimalist centered story panel.",
+      "elements": [
+        "Epilogue Text: Melancholic typing effect",
+        "Stats: Time elapsed vs Song duration",
+        "Action: 'Release Soul' (Next Level)"
+      ]
+    },
+    "song_upload": {
+      "layout": "Dashboard 'Control Room' grid (gap-6).",
+      "elements": [
+        "Drag-Drop Zone: border-dashed border-2 border-borders-default p-12 text-center",
+        "Form: Shadcn-inspired custom inputs using Outfit font",
+        "List: Uploaded tracks with assignable level dropdowns"
+      ]
+    },
+    "story_intro": {
+      "layout": "Pure black background. Single text block fading in slowly in the center.",
+      "elements": [
+        "Narrative Text (Outfit, text-xl, leading-loose, text-text-primary)"
+      ]
+    }
+  },
+  "media_assets": [
+    {
+      "category": "Main Menu Background (Melancholic City Rain)",
+      "url": "https://images.unsplash.com/photo-1517328894681-0f5dfabd463c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzV8MHwxfHNlYXJjaHwxfHxtZWxhbmNob2xpYyUyMG5pZ2h0JTIwY2l0eSUyMHJhaW58ZW58MHx8fHwxNzgzMTY0MjIyfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Use as a heavily darkened (opacity-20 or bg-black/80 overlay) background image behind the title."
+    },
+    {
+      "category": "Level Select / Story Mode Texture",
+      "url": "https://images.unsplash.com/photo-1544259342-306eccfec481?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzV8MHwxfHNlYXJjaHwzfHxtZWxhbmNob2xpYyUyMG5pZ2h0JTIwY2l0eSUyMHJhaW58ZW58MHx8fHwxNzgzMTY0MjIyfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Background texture for the level select grid to add depth."
+    },
+    {
+      "category": "Soul Ethereal Glow",
+      "url": "https://images.unsplash.com/photo-1614471131724-d57b15e45173?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwyfHxldGhlcmVhbCUyMGdsb3dpbmclMjBsaWdodCUyMGFic3RyYWN0fGVufDB8fHx8MTc4MzE2NDIyOHww&ixlib=rb-4.1.0&q=85",
+      "description": "Can be used with mix-blend-screen or CSS mask to create abstract soul light effects."
+    }
+  ],
+  "accessibility_and_testing": {
+    "contrast": "Ensure all text against dark backgrounds meets APCA standards. Use text-shadow on HUD elements to maintain legibility over the Canvas game.",
+    "testing_attributes": "All interactive elements MUST include data-testid attributes (e.g., data-testid='play-button', data-testid='level-card-1')."
+  },
+  "instructions_to_main_agent": [
+    "Use standard React functional components (.js/.jsx) with Tailwind CSS.",
+    "Do NOT use TypeScript (.tsx). Use JavaScript (.js).",
+    "Include standard Shadcn logic but style it heavily with the raw Tailwind utilities provided here to match the 8-bit cinematic theme.",
+    "Add the custom fonts ('Pixelify Sans', 'Outfit') to index.css or via Google Fonts in index.html.",
+    "Implement the CRT effect overlay as a fixed div with pointer-events-none over the entire app (excluding the Canvas if performance drops, but preferably over everything).",
+    "Keep HUD elements pointer-events-none so mouse clicks pass through to the Canvas, except for explicitly interactive buttons like 'Pause'."
+  ]
+}
