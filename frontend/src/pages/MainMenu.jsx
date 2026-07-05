@@ -1,7 +1,56 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Play, List, Info } from "lucide-react";
+import { Play, List, Info, Volume2, VolumeX } from "lucide-react";
+
+// Shared global-volume key. Game.jsx already reads/writes this same key.
+const VOLUME_KEY = "sb_volume";
+const DEFAULT_VOLUME = 0.15;
 
 export default function MainMenu() {
+  const audioRef = useRef(null);
+  const [volume, setVolume] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_VOLUME;
+    const v = window.localStorage.getItem(VOLUME_KEY);
+    return v !== null ? Number(v) : DEFAULT_VOLUME;
+  });
+
+  // Keep audio element in sync + persist volume globally.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(VOLUME_KEY, String(volume));
+    }
+  }, [volume]);
+
+  // Try to autoplay the menu theme. Browsers usually block autoplay until the
+  // user interacts, so if the initial play() rejects we wait for the first
+  // click/keypress anywhere on the page and try again once.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    audio.loop = true;
+
+    let unlocked = false;
+    const tryPlay = () => audio.play().catch(() => {});
+    const unlock = () => {
+      if (unlocked) return;
+      unlocked = true;
+      tryPlay();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    tryPlay();
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      audio.pause();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Background */}
@@ -29,6 +78,9 @@ export default function MainMenu() {
           }}
         />
       </div>
+
+      {/* Looping title-screen theme */}
+      <audio ref={audioRef} src="/audio/menu-theme.mp3" preload="auto" loop />
 
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Top nav */}
@@ -73,6 +125,35 @@ export default function MainMenu() {
             >
               <List className="w-5 h-5" /> Level Select
             </Link>
+          </div>
+
+          {/* Global volume adjuster */}
+          <div
+            className="mt-4 pixel-corners bg-soul-surface/85 border border-soul-ash px-4 py-3 backdrop-blur-md flex items-center gap-3"
+            data-testid="menu-volume"
+          >
+            <button
+              onClick={() => setVolume(volume > 0 ? 0 : DEFAULT_VOLUME)}
+              className="text-soul-ink hover:text-soul-amber transition-colors"
+              aria-label={volume > 0 ? "Mute" : "Unmute"}
+              data-testid="menu-volume-toggle"
+            >
+              {volume > 0 ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              className="w-40 accent-soul-amber"
+              aria-label="Volume"
+              data-testid="menu-volume-slider"
+            />
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-soul-mute w-8 text-right">
+              {Math.round(volume * 100)}%
+            </span>
           </div>
         </div>
 

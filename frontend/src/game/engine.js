@@ -678,12 +678,23 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       spawnSplatters(6);
     }
 
-    // collectibles
+    // collectibles — AABB against a generous 28x28 pickup box centered on c.x/c.y.
+    // Player is 54x82, so a full box-vs-box check is much more forgiving than
+    // the old 26-px radius (which missed items at head-height).
+    const PICK_W = 28;
+    const PICK_H = 28;
     for (const c of world.collectibles) {
       if (c.taken) continue;
-      const dx = (player.x + player.w / 2) - c.x;
-      const dy = (player.y + player.h / 2) - c.y;
-      if (dx * dx + dy * dy < 26 * 26) {
+      const cx0 = c.x - PICK_W / 2;
+      const cx1 = c.x + PICK_W / 2;
+      const cy0 = c.y - PICK_H / 2;
+      const cy1 = c.y + PICK_H / 2;
+      if (
+        player.x + player.w > cx0 &&
+        player.x < cx1 &&
+        player.y + player.h > cy0 &&
+        player.y < cy1
+      ) {
         c.taken = true;
         state.collected++;
         onCollect?.(state.collected);
