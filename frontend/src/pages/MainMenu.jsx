@@ -48,13 +48,13 @@ export default function MainMenu() {
 
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center gap-8 animate-fadeInUp">
           <div className="font-body text-[11px] uppercase tracking-[0.4em] text-soul-mute">
-            A pixel platformer scored to your songs
+            A pixel platformer
           </div>
           <h1 className="font-heading text-6xl sm:text-7xl md:text-8xl tracking-tighter uppercase soul-glow leading-none">
             Soul<span className="text-soul-amber">bound</span>
           </h1>
           <p className="font-body text-base md:text-lg text-soul-mute max-w-xl leading-relaxed">
-            Possess. Help. Transcend. Each level is a life. Each life is a song.
+            Possess. Help. Transcend. Each level is a life that needs help.
             Finish the mission before the last note fades.
           </p>
 
@@ -107,7 +107,7 @@ export default function MainMenu() {
 
         <footer className="p-6 md:p-8 flex items-center justify-between">
           <div className="font-mono text-xs text-soul-mute" data-testid="footer-tagline">
-            v0.1 · pre-alpha · press ↵ to dream
+            v0.1 · pre-alpha · press alt + f4 to reach Fie-Loe balansen
           </div>
           <Link
             to="/about"
