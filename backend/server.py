@@ -58,8 +58,11 @@ LEVELS = [
         "collect_label": "Notes",
         "collect_icon": "🎵",
         "default_song_seconds": 75,
-        "palette": {"sky": "#1a2c3d", "ground": "#2b4a3d", "accent": "#FFD166"},
-        "seed": 27
+        # Bright clinical palette: near-white walls, sickly green floor, amber signage.
+        "palette": {"sky": "#eef2f5", "ground": "#c8d4d0", "accent": "#FFD166"},
+        "seed": 27,
+        "scene": "hospital",
+        "preset_song": {"filename": "kaldvin.mp3", "duration_seconds": 75}
     },
     {
         "id": "Bogey",

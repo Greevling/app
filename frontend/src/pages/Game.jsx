@@ -6,8 +6,10 @@ import HUD from "@/components/HUD";
 import { createGame } from "@/game/engine";
 import { fetchLevel, postScore, API } from "@/lib/api";
 import { analyzeKickDrums } from "@/game/beats";
+import { useVolume } from "@/lib/volume";
 
 export default function Game() {
+  
   const { levelId } = useParams();
   const navigate = useNavigate();
   const canvasRef = useRef(null);
@@ -21,14 +23,10 @@ export default function Game() {
   const [showIntro, setShowIntro] = useState(true);
   const [beatTimes, setBeatTimes] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [volume, setVolume] = useState(() => {
-    const v = typeof window !== "undefined" ? window.localStorage.getItem("sb_volume") : null;
-    return v !== null ? Number(v) : 0.15;
-  });
+  const { volume, setVolume } = useVolume();
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
-    if (typeof window !== "undefined") window.localStorage.setItem("sb_volume", String(volume));
   }, [volume]);
 
   const duration = level?.song?.duration_seconds || level?.default_song_seconds || 90;
@@ -72,9 +70,9 @@ export default function Game() {
         }
       },
       onCollect: () => {},
-      onFinish: async ({ elapsed, collected, total, success }) => {
+      onFinish: async ({ elapsed, collected, total, success, reachedFinish }) => {
         if (audioRef.current) audioRef.current.pause();
-        setResult({ elapsed, collected, total, success });
+        setResult({ elapsed, collected, total, success, reachedFinish });
         try {
           await postScore({
             level_id: level.id,
@@ -244,7 +242,13 @@ export default function Game() {
         <div className="fixed inset-0 z-40 bg-soul-void/95 backdrop-blur-xl flex items-center justify-center p-6" data-testid="result-overlay">
           <div className="max-w-xl w-full text-center animate-fadeInUp">
             <div className="font-body text-[11px] uppercase tracking-[0.4em] text-soul-mute mb-3">
-              {result.success ? "Mission Complete" : result.death ? "The Soul Faltered" : "The Song Ended First"}
+              {result.success
+                ? "Mission Complete"
+                : result.death
+                  ? "The Soul Faltered"
+                  : result.reachedFinish
+                    ? `${level.name}'s Needs Went Unmet`
+                    : "The Song Ended First"}
             </div>
             <h2 className={`font-heading text-5xl md:text-6xl uppercase tracking-tight mb-6 ${result.success ? "text-soul-amber soul-glow" : "text-soul-rose soul-glow-rose"}`}>
               {result.success ? "Released" : "Bound"}

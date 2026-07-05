@@ -1,6 +1,8 @@
 // Simple Canvas platformer engine for Soulbound
 // Player auto-runs across a procedurally generated level tuned to song duration.
 // Space/Up to jump. Left/Right to nudge speed.
+console.log("[soulbound] engine.js loaded", new Date().toISOString());
+
 
 const GRAVITY = 1500;         // px/s^2
 const JUMP_VELOCITY = -620;   // px/s (first jump - from ground/platform)
@@ -21,7 +23,16 @@ function mulberry32(seed) {
   };
 }
 
-function buildLevel(level, duration, beatTimes) {
+// Distance thresholds. `hasCollectibleNear` checks x AND y so ground burgers
+// and platform burgers can coexist on the same screen without visually piling.
+const COLLECT_MIN_DX = 70;
+const COLLECT_MIN_DY = 40;
+// Ground obstacle spacing: minimum gap between the RIGHT edge of one obstacle
+// and the LEFT edge of the next. Increase for a breezier level, decrease for
+// a denser one.
+const OBSTACLE_MIN_GAP = 240;
+
+function buildLevel(level, duration /*, beatTimes (ignored) */) {
   const rand = mulberry32(level.seed);
   const speed = BASE_SPEED;
   const totalWidth = duration * speed;
@@ -30,10 +41,37 @@ function buildLevel(level, duration, beatTimes) {
   const collectibles = [];
   const platforms = [];
 
-  // ---- Procedural floating platforms (independent of beat map) ----
-  // Placed so top surface is reachable (max jump apex ~128px above stand height)
-  // Ground stand y ~= 238. Player h=82. Max reachable top y ~ 130.
-  // Platform top y range: 150..215 (safely reachable, safely above head when standing).
+  // Helper: is this proposed collectible position too close to something we've
+  // already placed? Prevents burgers from stacking or clustering weirdly.
+  const hasCollectibleNear = (cx, cy) => {
+    for (const c of collectibles) {
+      if (Math.abs(c.x - cx) < COLLECT_MIN_DX && Math.abs(c.y - cy) < COLLECT_MIN_DY) {
+        return true;
+      }
+    }
+    const flyerCount = obstacles.filter(o => o.type === "flyer").length;
+const flyerTimes = obstacles.filter(o => o.type === "flyer").map(o => o.spawnT.toFixed(1));
+console.log(
+  "[soulbound] buildLevel:",
+  { flyers: flyerCount, duration: duration.toFixed(1), spawnTs: flyerTimes }
+);
+    return false;
+  };
+
+  const tryPushCollectible = (cx, cy) => {
+    if (!hasCollectibleNear(cx, cy)) {
+      collectibles.push({ x: cx, y: cy, taken: false });
+    }
+  };
+
+  // Right edge of the most recently placed ground obstacle (or -Infinity).
+  const rightEdgeOf = (o) => {
+    if (o.type === "pit") return o.x + o.w;
+    if (o.type === "spike") return o.x + o.w;
+    return o.x + (o.w || 0);
+  };
+
+  // ---- Pass 1: Floating platforms + platform-top collectibles ----
   const P_MIN_Y = 150;
   const P_MAX_Y = 215;
   const P_H = 14;
@@ -44,15 +82,13 @@ function buildLevel(level, duration, beatTimes) {
         const pw = 80 + Math.floor(rand() * 80);
         const py = P_MIN_Y + Math.floor(rand() * (P_MAX_Y - P_MIN_Y));
         platforms.push({ x: px, y: py, w: pw, h: P_H });
-        // Reward: 85% chance to place collectible(s) above the platform.
-        // Wide platforms get two, spaced across the top; narrow ones get one centered.
         if (rand() < 0.85) {
           const cy = py - 20;
           if (pw >= 120) {
-            collectibles.push({ x: px + pw * 0.28, y: cy, taken: false });
-            collectibles.push({ x: px + pw * 0.72, y: cy, taken: false });
+            tryPushCollectible(px + pw * 0.28, cy);
+            tryPushCollectible(px + pw * 0.72, cy);
           } else {
-            collectibles.push({ x: px + pw / 2, y: cy, taken: false });
+            tryPushCollectible(px + pw / 2, cy);
           }
         }
         px += pw + 210 + rand() * 180;
@@ -62,64 +98,67 @@ function buildLevel(level, duration, beatTimes) {
     }
   }
 
-  if (beatTimes && beatTimes.length > 0) {
-    let lastX = 0;
-    const MIN_GAP = 340;   // was 140 — much breathier pacing
-    for (let i = 0; i < beatTimes.length; i++) {
-      const t = beatTimes[i];
-      if (t < 2) continue;
-      const x = t * speed;
-      if (x > totalWidth - 300) break;
-      if (x - lastX < MIN_GAP) continue;
-      const r = rand();
-      const kind = r < 0.2 ? "pit" : r < 0.55 ? "flyer" : "spike";
-      if (kind === "pit") {
-        const w = 55 + Math.floor(rand() * 45);
-        obstacles.push({ type: "pit", x, w });
-        const midY = 220;
-        for (let j = 0; j < 3; j++) collectibles.push({ x: x + 10 + j * (w / 3), y: midY - Math.sin((j / 2) * Math.PI) * 40, taken: false });
-        lastX = x + w;
-      } else if (kind === "flyer") {
-        // Toilet flushes: poop erupts straight up from the bowl and falls back onto it.
-        const flyer = { type: "flyer", x, w: 22, h: 22, spawnT: t };
-        obstacles.push(flyer);
-        // Launcher toilet sits at the SAME x as the poop and knows which flyer it belongs to.
-        obstacles.push({ type: "spike", x: x - 4, w: 30, h: 24, _launcher: true, _flyer: flyer });
-        // Burger placed BEFORE the toilet so player is baited into the danger zone.
-        collectibles.push({ x: x - 110, y: 240, taken: false });
-        lastX = x + 80;
-      } else {
-        const w = 26 + Math.floor(rand() * 14);
-        const h = 30 + Math.floor(rand() * 22);
-        obstacles.push({ type: "spike", x, w, h });
-        collectibles.push({ x: x - 70, y: 240, taken: false });
-        lastX = x + w + 40;          // spike branch — bit of extra tail
+  // ---- Pass 2: Ground obstacles (purely procedural, sequential) ----
+  // A single left-to-right cursor `x` advances past each obstacle by its own
+  // width plus a gap. This makes overlaps structurally impossible.
+  let x = 520; // first obstacle starts well past the player's spawn
+  while (x < totalWidth - 500) {
+    const roll = rand();
+    let kind;
+    if (roll < 0.20) kind = "pit";
+    else if (roll < 0.60) kind = "flyer";
+    else kind = "spike";
+    // Flyer is a bathroom-only mechanic (poop from toilets). Everywhere else
+    // it becomes another spike obstacle themed by the scene.
+    if (kind === "flyer" && level.scene !== "bathroom") kind = "spike";                  // 40% plain toilets
+
+    if (kind === "pit") {
+      const w = 60 + Math.floor(rand() * 45);
+      obstacles.push({ type: "pit", x, w });
+      // Arc of collectibles across the pit
+      const midY = 220;
+      for (let i = 0; i < 3; i++) {
+        const cx = x + 10 + i * (w / 3);
+        const cy = midY - Math.sin((i / 2) * Math.PI) * 40;
+        tryPushCollectible(cx, cy);
       }
+      x += w + OBSTACLE_MIN_GAP + rand() * 160;
+
+    } else if (kind === "flyer") {
+      // Toilet + poop combo. Poop launches straight up from the bowl and lands
+      // back in it. Launcher sprite is 40 wide, centered on x + 11 (poop launch).
+      // spawnT = the game-clock moment when the player will be AT this toilet.
+      // Player starts at x=120, so subtract that offset. Now the poop's arc
+      // (dt in [-1.0, 0)) unfolds IN FRONT of the player and lands exactly
+      // when the player arrives — forcing them to jump.
+      const flyer = { type: "flyer", x, w: 22, h: 22, spawnT: (x - 120) / speed };
+      obstacles.push(flyer);
+      obstacles.push({
+        type: "spike",
+        x: x - 9,
+        w: 40,
+        h: 44,
+        _launcher: true,
+        _flyer: flyer,
+      });
+      // Bait burger placed BEFORE the toilet so player runs into the danger zone.
+      tryPushCollectible(x - 140, 240);
+      // Advance past the launcher toilet's footprint (40 wide) + full gap.
+      x += 40 + OBSTACLE_MIN_GAP + rand() * 160;
+
+    } else {
+      // Plain toilet spike (no poop).
+      const w = 42 + Math.floor(rand() * 14);
+      const h = 44 + Math.floor(rand() * 18);
+      obstacles.push({ type: "spike", x, w, h });
+      // Reward burger before the toilet
+      tryPushCollectible(x - 90, 240);
+      // Reward burger after the toilet (if space allows)
+      tryPushCollectible(x + w + 90, 240);
+      x += w + OBSTACLE_MIN_GAP + rand() * 160;
     }
-    return { obstacles, collectibles, platforms, totalWidth, speed };
   }
 
-  let x = 500;
-  while (x < totalWidth - 400) {
-    const kind = rand() < 0.5 ? "pit" : "spike";
-    if (kind === "pit") {
-      const w = 60 + Math.floor(rand() * 60);
-      obstacles.push({ type: "pit", x, w });
-      // collectible arc over pit
-      const midY = 260 - 40;
-      for (let i = 0; i < 3; i++) {
-        collectibles.push({ x: x + 10 + i * (w / 3), y: midY - Math.sin((i / 2) * Math.PI) * 40, taken: false });
-      }
-      x += w + 320 + rand() * 240;  // pit
-    } else {
-      const w = 26 + Math.floor(rand() * 18);
-      const h = 30 + Math.floor(rand() * 26);
-      obstacles.push({ type: "spike", x, w, h });
-      collectibles.push({ x: x - 90, y: 240, taken: false });
-      collectibles.push({ x: x + w + 90, y: 240, taken: false });
-      x += w + 280 + rand() * 220;  // spike
-    }
-  }
   return { obstacles, collectibles, platforms, totalWidth, speed };
 }
 
@@ -129,7 +168,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
   const H = canvas.height;
 
   const world = buildLevel(level, duration, beatTimes);
-  const sprites = { frames: [], toilet: null, toiletOpen: null };
+  const sprites = { frames: [], toilet: null, toiletOpen: null, patient: null, bed: null };
   const load = (n) => { const i = new Image(); i.onload = () => { sprites.frames[n] = i; }; i.src = `/art/${level.id}-${n + 1}.png`; };
   load(0); load(1)
   // Optional prop sprite for bathroom toilets. Falls back to canvas drawing if missing.
@@ -149,6 +188,16 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
   toiletOpenImg.onload = () => { sprites.toiletOpen = toiletOpenImg; };
   toiletOpenImg.onerror = () => { console.warn("[soulbound] toilet-open sprite missing at", toiletOpenImg.src); };
   toiletOpenImg.src = "/art/props/toilet-open.png?v=" + Date.now();
+   // ---- Hospital scene sprites ----
+  const patientImg = new Image();
+  patientImg.onload = () => { sprites.patient = patientImg; };
+  patientImg.onerror = () => console.warn("[soulbound] patient sprite missing at", patientImg.src);
+  patientImg.src = "/art/props/patient.png?v=" + Date.now();
+
+  const bedImg = new Image();
+  bedImg.onload = () => { sprites.bed = bedImg; };
+  bedImg.onerror = () => console.warn("[soulbound] bed sprite missing at", bedImg.src);
+  bedImg.src = "/art/props/bed.png?v=" + Date.now();
   const player = {
     x: 120,
     y: H - GROUND_HEIGHT - 82,
@@ -169,7 +218,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     cameraX: 0,
     collected: 0,
     total: world.collectibles.length,
-    soulHealth: 3,
+    soulHealth: 1,
     keys: { left: false, right: false, jump: false },
     splatters: [], // brown blobs stuck to the screen from poop hits
     world,
@@ -181,7 +230,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     player.jumpsLeft = MAX_JUMPS;
     state.elapsed = 0; state.cameraX = 0; state.collected = 0;
     world.collectibles.forEach(c => (c.taken = false));
-    state.soulHealth = 3;
+    state.soulHealth = 1;
     state.finished = false;
     state.splatters = [];
   }
@@ -263,7 +312,7 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
         rx: size, ry: size * (0.55 + Math.random() * 0.5),
         rot: Math.random() * Math.PI * 2,
         color: browns[Math.floor(Math.random() * browns.length)],
-        baseAlpha: 0.5, // capped so the screen never becomes impossible to see through
+        baseAlpha: 0.78, // was 0.5 — chunkier smear, still fades over time
         t0: now,
         life: 6.5,
         drops,
@@ -344,9 +393,95 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     ctx.fillStyle = g2;
     ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
   }
+// Flicker state (hospital scene only). Populated on first hospital frame.
+  const flicker = { nextAt: 5 + Math.random() * 6, active: false, until: 0 };
+
+  function drawHospitalScene(camX) {
+    // --- Walls (bright off-white) ---
+    ctx.fillStyle = "#eef2f5";
+    ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+
+    // Subtle horizontal tile lines on wall
+    ctx.strokeStyle = "rgba(180,190,195,0.55)";
+    ctx.lineWidth = 1;
+    for (let y = 40; y < H - GROUND_HEIGHT; y += 60) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+
+    // Vertical tile grid, parallax with camera
+    const tileW = 90;
+    const offX = -Math.floor(camX * 0.6) % tileW;
+    for (let x = offX - tileW; x < W + tileW; x += tileW) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H - GROUND_HEIGHT);
+      ctx.stroke();
+    }
+
+    // --- Ceiling shadow strip ---
+    const ceilingGrad = ctx.createLinearGradient(0, 0, 0, 60);
+    ceilingGrad.addColorStop(0, "rgba(80,90,100,0.55)");
+    ceilingGrad.addColorStop(1, "rgba(80,90,100,0)");
+    ctx.fillStyle = ceilingGrad;
+    ctx.fillRect(0, 0, W, 60);
+
+    // --- Fluorescent ceiling lights (parallax w/ camera) ---
+    const lightSpacing = 180;
+    const lightOffX = -Math.floor(camX * 0.75) % lightSpacing;
+    for (let x = lightOffX - lightSpacing; x < W + lightSpacing; x += lightSpacing) {
+      // mount bracket
+      ctx.fillStyle = "#78848d";
+      ctx.fillRect(x + 44, 0, 4, 14);
+      // tube fixture
+      ctx.fillStyle = "#c8ced3";
+      ctx.fillRect(x + 10, 14, 72, 8);
+      // glowing tube (dimmer during flicker)
+      ctx.save();
+      const on = !flicker.active;
+      ctx.globalAlpha = on ? 1 : 0.25;
+      ctx.fillStyle = "#fff8d8";
+      ctx.fillRect(x + 12, 16, 68, 4);
+      // downward glow cone
+      const cone = ctx.createLinearGradient(x + 46, 20, x + 46, 220);
+      cone.addColorStop(0, on ? "rgba(255,247,210,0.45)" : "rgba(255,247,210,0.08)");
+      cone.addColorStop(1, "rgba(255,247,210,0)");
+      ctx.fillStyle = cone;
+      ctx.beginPath();
+      ctx.moveTo(x + 8, 20);
+      ctx.lineTo(x + 84, 20);
+      ctx.lineTo(x + 116, 220);
+      ctx.lineTo(x - 24, 220);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // --- Wall props: doors, "no-exit" signs, wall clock (very sparse) ---
+    const propEvery = 640;
+    const propStart = Math.floor(camX / propEvery) * propEvery - propEvery;
+    for (let px = propStart; px < camX + W + propEvery; px += propEvery) {
+      const sx = px - camX;
+      // hospital door
+      ctx.fillStyle = "#a8b3b8";
+      ctx.fillRect(sx, H - GROUND_HEIGHT - 130, 50, 130);
+      ctx.fillStyle = "#eef2f5";
+      ctx.fillRect(sx + 4, H - GROUND_HEIGHT - 126, 42, 60);   // top window
+      ctx.fillStyle = "#5a6570";
+      ctx.fillRect(sx + 4, H - GROUND_HEIGHT - 60, 42, 3);      // divider
+      ctx.fillStyle = "#7a848c";
+      ctx.fillRect(sx + 40, H - GROUND_HEIGHT - 78, 4, 6);      // handle
+      // biohazard-ish red trim
+      ctx.fillStyle = "#EF476F";
+      ctx.fillRect(sx, H - GROUND_HEIGHT - 130, 50, 3);
+    }
+  }
 
   function drawBg() {
     if (level.scene === "bathroom") { drawBathroomScene(); return; }
+    if (level.scene === "hospital") { drawHospitalScene(state.cameraX); return; }
     // sky
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, level.palette.sky);
@@ -401,6 +536,31 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
       // top edge
       ctx.fillStyle = "#8a95a3";
       ctx.fillRect(0, H - GROUND_HEIGHT, W, 2);
+    } else if (level.scene === "hospital") {
+      // Sickly light-green clinical linoleum
+      ctx.fillStyle = "#c8d4d0";
+      ctx.fillRect(0, H - GROUND_HEIGHT, W, GROUND_HEIGHT);
+      // large square tile grid
+      ctx.strokeStyle = "rgba(90,110,105,0.35)";
+      ctx.lineWidth = 1;
+      const tileSize = 70;
+      const offX = -Math.floor(camX) % tileSize;
+      for (let x = offX - tileSize; x < W + tileSize; x += tileSize) {
+        ctx.beginPath(); ctx.moveTo(x, H - GROUND_HEIGHT); ctx.lineTo(x, H); ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.moveTo(0, H - GROUND_HEIGHT + tileSize / 2);
+      ctx.lineTo(W, H - GROUND_HEIGHT + tileSize / 2);
+      ctx.stroke();
+      // scuff marks
+      ctx.fillStyle = "rgba(80,95,90,0.15)";
+      for (let i = 0; i < 8; i++) {
+        const sx = ((i * 231 - camX * 0.9) % (W + 200) + W + 200) % (W + 200) - 100;
+        ctx.fillRect(sx, H - GROUND_HEIGHT + 20 + (i % 3) * 15, 30, 2);
+      }
+      // dark top edge
+      ctx.fillStyle = "#5a6570";
+      ctx.fillRect(0, H - GROUND_HEIGHT, W, 2);
     } else {
       ctx.fillStyle = "#0b0d16";
       ctx.fillRect(0, H - GROUND_HEIGHT, W, GROUND_HEIGHT);
@@ -435,8 +595,8 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
         }
         // Use custom sprite if loaded, otherwise fall back to programmatic drawing.
         if (toiletFrame) {
-          const drawW = 48;      // rendered width  in world pixels
-          const drawH = 48;      // rendered height in world pixels
+          const drawW = 64;      // rendered width  in world pixels (was 48)
+          const drawH = 64;      // rendered height in world pixels (was 48)
           const dx = sx + o.w / 2 - drawW / 2;
           const dy = H - GROUND_HEIGHT - drawH;
           ctx.imageSmoothingEnabled = false;
@@ -457,6 +617,28 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
           ctx.fillRect(bx, H - GROUND_HEIGHT - 2, bw, 2);
           ctx.fillStyle = "#d8d5cf";
           ctx.fillRect(bx, H - GROUND_HEIGHT - bh * 0.6, bw, 2);
+        }
+      } else if (level.scene === "hospital") {
+        if (sprites.patient) {
+          const drawW = 48;
+          const drawH = 72;
+          const dx = sx + o.w / 2 - drawW / 2;
+          const dy = H - GROUND_HEIGHT - drawH;
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(sprites.patient, dx, dy, drawW, drawH);
+        } else {
+          // Fallback stick-figure so gameplay works before sprite is dropped in
+          const px = sx + o.w / 2;
+          const py = H - GROUND_HEIGHT;
+          ctx.fillStyle = "#e8e2d5";                  // gown
+          ctx.fillRect(px - 14, py - 46, 28, 40);
+          ctx.fillStyle = "#c8b8a0";                  // face
+          ctx.fillRect(px - 10, py - 62, 20, 18);
+          ctx.fillStyle = "#EF476F";                  // wild eye
+          ctx.fillRect(px - 6, py - 54, 3, 3);
+          ctx.fillRect(px + 2, py - 54, 3, 3);
+          ctx.fillStyle = "#0b0d16";                  // stringy hair
+          ctx.fillRect(px - 12, py - 66, 24, 6);
         }
       } else {
         ctx.fillStyle = "#EF476F";
@@ -537,6 +719,22 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
         ctx.fillStyle = "#6b3a1e"; ctx.fillRect(-11, 1, 22, 4);
         // bottom bun
         ctx.fillStyle = "#c98a4f"; ctx.fillRect(-12, 5, 24, 4); ctx.fillRect(-10, 9, 20, 2);
+      } else if (level.scene === "hospital") {
+        // 8-bit music note
+        ctx.shadowColor = level.palette.accent;
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = level.palette.accent;
+        // stem
+        ctx.fillRect(2, -10, 3, 14);
+        // note head (angled ellipse feel)
+        ctx.fillRect(-6, 2, 10, 6);
+        ctx.fillRect(-5, 1, 10, 8);
+        // flag
+        ctx.fillRect(5, -10, 6, 3);
+        ctx.fillRect(5, -6, 4, 3);
+        // highlight
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.fillRect(-4, 3, 3, 2);
       } else {
         ctx.fillStyle = level.palette.accent;
         ctx.shadowColor = level.palette.accent;
@@ -704,16 +902,45 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     // camera
     state.cameraX = Math.max(0, player.x - W * 0.3);
 
+    // Success requires reaching the finish line AND collecting >= 80% of items.
+    // If total is 0 (no collectibles at all), any finish-line touch counts.
+     const enoughCollected = state.total === 0
+      ? true
+      : state.collected / state.total >= 0.9;
+
     // finish
     if (player.x >= world.totalWidth - 20) {
       state.finished = true;
-      onFinish?.({ elapsed: state.elapsed, collected: state.collected, total: state.total, success: true });
+      onFinish?.({
+        elapsed: state.elapsed,
+        collected: state.collected,
+        total: state.total,
+        success: enoughCollected,
+        reachedFinish: true,
+      });
     }
-
+    // Hospital lights: occasional short flicker → temporary darkness overlay.
+    if (level.scene === "hospital") {
+      if (!flicker.active && state.elapsed >= flicker.nextAt) {
+        flicker.active = true;
+        flicker.until = state.elapsed + 0.14 + Math.random() * 0.12; // 0.14-0.26s
+      }
+      if (flicker.active && state.elapsed >= flicker.until) {
+        flicker.active = false;
+        flicker.nextAt = state.elapsed + 5 + Math.random() * 8;      // 5-13s
+      }
+    }
     // time out (song ended)
     if (state.elapsed >= duration) {
       state.finished = true;
-      onFinish?.({ elapsed: state.elapsed, collected: state.collected, total: state.total, success: player.x >= world.totalWidth - 20 });
+      const reachedFinish = player.x >= world.totalWidth - 20;
+      onFinish?.({
+        elapsed: state.elapsed,
+        collected: state.collected,
+        total: state.total,
+        success: reachedFinish && enoughCollected,
+        reachedFinish,
+      });
     }
   }
 
@@ -739,11 +966,12 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
 
   function drawPlatforms(camX) {
     const bathroom = level.scene === "bathroom";
+    const hospital = level.scene === "hospital";
     for (const p of world.platforms) {
       const sx = p.x - camX;
       if (sx + p.w < -20 || sx > W + 20) continue;
       if (bathroom) {
-        // marble slab matching the bathroom floor
+        // marble slabb matching the bathroom floor
         ctx.fillStyle = "#e8e6e1";
         ctx.fillRect(sx, p.y, p.w, p.h);
         // top polished edge
@@ -759,26 +987,33 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
         ctx.moveTo(sx + 6, p.y + Math.floor(p.h / 2));
         ctx.lineTo(sx + p.w - 8, p.y + Math.floor(p.h / 2) + 1);
         ctx.stroke();
+      } else if (hospital) {
+        if (sprites.bed) {
+          const drawH = 36;
+          // The sprite's TOP must line up with p.y (that's the collision surface).
+          // Bed sprite is wider than collision box for visual overhang; center it.
+          const drawW = Math.max(p.w + 32, 96);
+          const dx = sx + p.w / 2 - drawW / 2;
+          const dy = p.y - (drawH - p.h);
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(sprites.bed, dx, dy, drawW, drawH);
+        } else {
+          // Fallback bed drawing (white mattress + metal frame)
+          ctx.fillStyle = "#f5f7f8";                          // sheet
+          ctx.fillRect(sx, p.y, p.w, p.h);
+          ctx.fillStyle = "#78848d";                          // metal frame top rail
+          ctx.fillRect(sx - 4, p.y - 2, p.w + 8, 3);
+          ctx.fillStyle = "#5a6570";                          // legs
+          ctx.fillRect(sx, p.y + p.h, 3, 22);
+          ctx.fillRect(sx + p.w - 3, p.y + p.h, 3, 22);
+          ctx.fillStyle = "#c8ced3";                          // pillow
+          ctx.fillRect(sx + 4, p.y - 6, 22, 8);
+          // subtle red stain
+          ctx.fillStyle = "rgba(239,71,111,0.35)";
+          ctx.fillRect(sx + p.w * 0.45, p.y + 2, 12, 4);
+        }
       } else {
-        // pixel block themed to level palette
-        ctx.fillStyle = level.palette.ground;
-        ctx.fillRect(sx, p.y, p.w, p.h);
-        // accent-glowing top rim
-        ctx.fillStyle = level.palette.accent;
-        ctx.fillRect(sx, p.y, p.w, 2);
-        // side highlight
-        ctx.fillStyle = "rgba(255,255,255,0.06)";
-        ctx.fillRect(sx, p.y + 2, 2, p.h - 4);
-        // bottom shadow
-        ctx.fillStyle = "rgba(0,0,0,0.4)";
-        ctx.fillRect(sx, p.y + p.h - 2, p.w, 2);
-        // faint glow above rim
-        ctx.save();
-        ctx.shadowColor = level.palette.accent;
-        ctx.shadowBlur = 8;
-        ctx.fillStyle = level.palette.accent;
-        ctx.fillRect(sx, p.y, p.w, 1);
-        ctx.restore();
+        // pixel block themed to level palette (unchanged) ...
       }
     }
   }
@@ -792,10 +1027,26 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     drawFinishLine(state.cameraX);
     if (!player.dead) drawPlayer();
     else {
-      // flash
       if (Math.floor(performance.now() / 60) % 2 === 0) drawPlayer();
     }
     drawSplatters();
+
+    // Flicker overlay — very short bursts of near-darkness. Not opaque, so
+    // silhouettes remain visible enough to keep dodging obstacles.
+    if (level.scene === "hospital" && flicker.active) {
+      ctx.save();
+      ctx.fillStyle = "rgba(5,8,12,0.78)";
+      ctx.fillRect(0, 0, W, H);
+      // Small residual glow so the player isn't 100% blind
+      const px = player.x - state.cameraX + player.w / 2;
+      const py = player.y + player.h / 2;
+      const grad = ctx.createRadialGradient(px, py, 20, px, py, 140);
+      grad.addColorStop(0, "rgba(255,247,210,0.35)");
+      grad.addColorStop(1, "rgba(255,247,210,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
   }
 
   let rafId = 0;

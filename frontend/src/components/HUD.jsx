@@ -124,15 +124,15 @@ export default function HUD({
         )}
       </div>
 
-      {/* Soul health pip */}
-      <div className="absolute bottom-4 left-4 flex gap-1" data-testid="hud-health">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div
-            key={i}
-            className={`w-3 h-3 border ${i < soulHealth ? "bg-soul-rose border-soul-rose" : "border-soul-ash bg-transparent"}`}
-            style={i < soulHealth ? { boxShadow: "0 0 8px #EF476F" } : {}}
-          />
-        ))}
+      {/* Single-soul indicator */}
+      <div className="absolute bottom-4 left-4 flex items-center gap-2" data-testid="hud-health">
+        <div
+          className={`w-3 h-3 border ${soulHealth > 0 ? "bg-soul-rose border-soul-rose" : "border-soul-ash bg-transparent"}`}
+          style={soulHealth > 0 ? { boxShadow: "0 0 8px #EF476F" } : {}}
+        />
+        <span className="font-body text-[10px] uppercase tracking-[0.25em] text-soul-mute">
+          One life
+        </span>
       </div>
     </div>
   );

@@ -1,55 +1,9 @@
-import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Play, List, Info, Volume2, VolumeX } from "lucide-react";
-
-// Shared global-volume key. Game.jsx already reads/writes this same key.
-const VOLUME_KEY = "sb_volume";
-const DEFAULT_VOLUME = 0.15;
+import { useVolume, DEFAULT_VOLUME } from "@/lib/volume";
 
 export default function MainMenu() {
-  const audioRef = useRef(null);
-  const [volume, setVolume] = useState(() => {
-    if (typeof window === "undefined") return DEFAULT_VOLUME;
-    const v = window.localStorage.getItem(VOLUME_KEY);
-    return v !== null ? Number(v) : DEFAULT_VOLUME;
-  });
-
-  // Keep audio element in sync + persist volume globally.
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume;
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(VOLUME_KEY, String(volume));
-    }
-  }, [volume]);
-
-  // Try to autoplay the menu theme. Browsers usually block autoplay until the
-  // user interacts, so if the initial play() rejects we wait for the first
-  // click/keypress anywhere on the page and try again once.
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = volume;
-    audio.loop = true;
-
-    let unlocked = false;
-    const tryPlay = () => audio.play().catch(() => {});
-    const unlock = () => {
-      if (unlocked) return;
-      unlocked = true;
-      tryPlay();
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-    tryPlay();
-    window.addEventListener("pointerdown", unlock);
-    window.addEventListener("keydown", unlock);
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-      audio.pause();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { volume, setVolume } = useVolume();
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -68,7 +22,6 @@ export default function MainMenu() {
       <div className="absolute inset-0 bg-gradient-to-b from-soul-void/70 via-soul-void/50 to-soul-void" aria-hidden />
       <div className="absolute inset-0 grid-bg opacity-40" aria-hidden />
 
-      {/* Soul particle */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 pointer-events-none">
         <div
           className="w-40 h-40 rounded-full animate-flicker"
@@ -79,11 +32,7 @@ export default function MainMenu() {
         />
       </div>
 
-      {/* Looping title-screen theme */}
-      <audio ref={audioRef} src="/audio/menu-theme.mp3" preload="auto" loop />
-
       <div className="relative z-10 min-h-screen flex flex-col">
-        {/* Top nav */}
         <nav className="p-6 md:p-8 flex items-center justify-between">
           <div className="font-heading text-xl md:text-2xl text-soul-amber soul-glow tracking-wider" data-testid="brand-mark">
             SOULBOUND
@@ -97,7 +46,6 @@ export default function MainMenu() {
           </Link>
         </nav>
 
-        {/* Hero */}
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center gap-8 animate-fadeInUp">
           <div className="font-body text-[11px] uppercase tracking-[0.4em] text-soul-mute">
             A pixel platformer scored to your songs
@@ -157,7 +105,6 @@ export default function MainMenu() {
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="p-6 md:p-8 flex items-center justify-between">
           <div className="font-mono text-xs text-soul-mute" data-testid="footer-tagline">
             v0.1 · pre-alpha · press ↵ to dream
