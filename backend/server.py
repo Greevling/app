@@ -221,6 +221,12 @@ async def get_scores(level_id: str):
     ).sort("completion_time_seconds", 1).limit(10)
     return await cursor.to_list(10)
 
+@api_router.delete("/scores")
+async def reset_all_scores():
+    """Wipes ALL completion records across every level. Used by the Reset Progress
+    button on the level-select screen. There is no way to undo this from the app."""
+    result = await db.scores.delete_many({})
+    return {"deleted": result.deleted_count}
 
 @api_router.post("/songs/upload")
 async def upload_song(

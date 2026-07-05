@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Music, Clock, Trophy, Play } from "lucide-react";
+import { ArrowLeft, Music, Clock, Trophy, Play, Check, Circle, RotateCcw } from "lucide-react";
 import { fetchLevels } from "@/lib/api";
+import { toast } from "sonner";
+
+const API = process.env.REACT_APP_BACKEND_URL;
 
 const formatDur = (s) => {
   const m = Math.floor(s / 60);
@@ -25,6 +28,29 @@ export default function LevelSelect() {
           <Link to="/" className="inline-flex items-center gap-2 font-body text-[11px] uppercase tracking-[0.3em] text-soul-mute hover:text-soul-amber transition-colors" data-testid="back-menu-btn">
             <ArrowLeft className="w-4 h-4" /> Back
           </Link>
+          <button
+            onClick={async () => {
+              const ok = window.confirm(
+                "Reset all progress?\n\nThis will remove every completion badge and best time across all five bodies. It cannot be undone."
+              );
+              if (!ok) return;
+              try {
+                const res = await fetch(`${API}/api/scores`, { method: "DELETE" });
+                if (!res.ok) throw new Error("Reset failed");
+                const data = await res.json();
+                toast.success(`Progress reset (${data.deleted} scores wiped)`);
+                // Re-fetch levels so checkmarks disappear immediately.
+                const fresh = await fetchLevels();
+                setLevels(fresh);
+              } catch (e) {
+                toast.error("Could not reset progress");
+              }
+            }}
+            data-testid="reset-progress-btn"
+            className="inline-flex items-center gap-2 font-body text-[11px] uppercase tracking-[0.3em] text-soul-mute hover:text-soul-rose transition-colors border border-soul-ash hover:border-soul-rose px-3 py-2 pixel-corners"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Reset Progress
+          </button>
         </div>
 
         <header className="mb-12 animate-fadeInUp">
@@ -46,9 +72,17 @@ export default function LevelSelect() {
                   key={lvl.id}
                   to={`/play/${lvl.id}`}
                   data-testid={`level-card-${lvl.id}`}
-                  className="group relative flex flex-col p-6 lg:p-8 border border-soul-ash bg-soul-surface/80 backdrop-blur-md transition-all duration-500 hover:-translate-y-1 hover:border-soul-amber overflow-hidden cursor-pointer pixel-corners md:col-span-4 min-h-[260px]"
+                  className={`group relative flex flex-col p-6 lg:p-8 border backdrop-blur-md transition-all duration-500 hover:-translate-y-1 overflow-hidden cursor-pointer pixel-corners md:col-span-4 min-h-[260px] ${
+                    lvl.best_score
+                      ? "border-emerald-400/50 hover:border-emerald-300 bg-soul-surface/80"
+                      : "border-soul-ash hover:border-soul-amber bg-soul-surface/80"
+                  }`}
                   style={{
-                    background: `linear-gradient(135deg, ${lvl.palette.sky} 0%, #10121C 100%)`,
+                    backgroundColor: "#10121C",
+                    backgroundImage: `linear-gradient(135deg, ${lvl.palette.accent}33 0%, rgba(16,18,28,0) 55%)`,
+                    ...(lvl.best_score && {
+                      boxShadow: "inset 0 0 40px rgba(52,211,153,0.12)",
+                    }),
                   }}
                 >
                   {/* Soul aura */}
@@ -61,7 +95,25 @@ export default function LevelSelect() {
 
                   <div className="relative z-10 flex-1 flex flex-col justify-between gap-6">
                     <div>
-                      <div className="font-mono text-xs text-soul-mute mb-2">BODY #{lvl.index.toString().padStart(2, "0")}</div>
+                      <div className="flex items-center justify-between gap-2 mb-2" data-testid={`level-status-${lvl.id}`}>
+                        <div className="font-mono text-xs text-soul-mute">BODY #{lvl.index.toString().padStart(2, "0")}</div>
+                        {lvl.best_score ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 border border-emerald-400/70 bg-emerald-500/15 text-emerald-300 font-mono text-[10px] uppercase tracking-[0.2em]"
+                            style={{ boxShadow: "0 0 10px rgba(52,211,153,0.35)" }}
+                            data-testid={`level-completed-${lvl.id}`}
+                          >
+                            <Check className="w-3 h-3" /> Completed
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 border border-soul-ash/60 text-soul-mute font-mono text-[10px] uppercase tracking-[0.2em]"
+                            data-testid={`level-pending-${lvl.id}`}
+                          >
+                            <Circle className="w-2.5 h-2.5" /> Not yet
+                          </span>
+                        )}
+                      </div>
                       <div className={`font-heading uppercase tracking-tight ${isHero ? "text-5xl md:text-6xl" : "text-3xl"} text-soul-ink`}>
                         {lvl.name}
                       </div>

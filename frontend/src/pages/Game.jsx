@@ -208,13 +208,22 @@ export default function Game() {
                 No song uploaded. Using a {Math.round(duration)}s placeholder timer.
               </div>
             )}
-            <button
-              onClick={() => setShowIntro(false)}
-              data-testid="story-begin-btn"
-              className="px-10 py-4 pixel-corners bg-soul-amber text-soul-void font-heading text-xl uppercase tracking-wider shadow-[0_0_20px_rgba(255,209,102,0.5)] hover:shadow-[0_0_40px_rgba(255,209,102,0.9)] transition-all"
-            >
-              Possess {level.name}
-            </button>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <button
+                onClick={() => navigate("/levels")}
+                data-testid="story-back-btn"
+                className="px-8 py-4 pixel-corners border-2 border-soul-ash text-soul-ink font-heading text-lg uppercase tracking-wider hover:border-soul-rose hover:text-soul-rose transition-colors inline-flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back to Bodies
+              </button>
+              <button
+                onClick={() => setShowIntro(false)}
+                data-testid="story-begin-btn"
+                className="px-10 py-4 pixel-corners bg-soul-amber text-soul-void font-heading text-xl uppercase tracking-wider shadow-[0_0_20px_rgba(255,209,102,0.5)] hover:shadow-[0_0_40px_rgba(255,209,102,0.9)] transition-all"
+              >
+                Possess {level.name}
+              </button>
+            </div>
           </div>
         </div>
       )}

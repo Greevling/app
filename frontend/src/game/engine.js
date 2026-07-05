@@ -105,24 +105,44 @@ console.log(
   while (x < totalWidth - 500) {
     const roll = rand();
     let kind;
-    if (roll < 0.20) kind = "pit";
-    else if (roll < 0.60) kind = "flyer";
+    if (roll < 0.32) kind = "pit";                // was 0.20 — more holes on the ground
+    else if (roll < 0.62) kind = "flyer";
     else kind = "spike";
     // Flyer is a bathroom-only mechanic (poop from toilets). Everywhere else
     // it becomes another spike obstacle themed by the scene.
-    if (kind === "flyer" && level.scene !== "bathroom") kind = "spike";                  // 40% plain toilets
+    if (kind === "flyer" && level.scene !== "bathroom") kind = "spike";
 
     if (kind === "pit") {
-      const w = 60 + Math.floor(rand() * 45);
+      // On Kaldvin's hospital floor, ~35% of pits become WIDE pits requiring the
+      // player to jump on hospital-bed platforms to cross. Every wide pit gets a
+      // guaranteed bed spanning it so the traversal is always solvable.
+      const isWide = level.scene === "hospital" && rand() < 0.35;
+      const w = isWide
+        ? 150 + Math.floor(rand() * 55)   // 150..204 wide
+        : 60  + Math.floor(rand() * 45);  // 60..104 (unchanged)
       obstacles.push({ type: "pit", x, w });
-      // Arc of collectibles across the pit
-      const midY = 220;
-      for (let i = 0; i < 3; i++) {
-        const cx = x + 10 + i * (w / 3);
-        const cy = midY - Math.sin((i / 2) * Math.PI) * 40;
-        tryPushCollectible(cx, cy);
+
+      if (isWide) {
+        // Rescue bed straddling the pit. Placed slightly past the near edge and
+        // narrower than the pit so the player has to time the jump onto it.
+        const bedW = 96 + Math.floor(rand() * 30);          // 96..125
+        const bedX = x + Math.floor(w * 0.30);              // ~30% into the pit
+        const bedY = 175 + Math.floor(rand() * 25);         // 175..199 (reachable)
+        platforms.push({ x: bedX, y: bedY, w: bedW, h: 14 });
+        // Bonus note above the bed as a reward for bridging safely
+        tryPushCollectible(bedX + bedW / 2, bedY - 22);
+      } else {
+        // Regular arc of collectibles across the pit
+        const midY = 220;
+        for (let i = 0; i < 3; i++) {
+          const cx = x + 10 + i * (w / 3);
+          const cy = midY - Math.sin((i / 2) * Math.PI) * 40;
+          tryPushCollectible(cx, cy);
+        }
       }
-      x += w + OBSTACLE_MIN_GAP + rand() * 160;
+
+      // Extra safety buffer so obstacles never spawn right at the pit's far edge
+      x += w + OBSTACLE_MIN_GAP + 80 + rand() * 160;
 
     } else if (kind === "flyer") {
       // Toilet + poop combo. Poop launches straight up from the bowl and lands
@@ -146,10 +166,17 @@ console.log(
       // Advance past the launcher toilet's footprint (40 wide) + full gap.
       x += 40 + OBSTACLE_MIN_GAP + rand() * 160;
 
-    } else {
-      // Plain toilet spike (no poop).
-      const w = 42 + Math.floor(rand() * 14);
-      const h = 44 + Math.floor(rand() * 18);
+     } else {
+      // Plain spike obstacle. Size depends on scene so hospital patients feel
+      // like proper standing humans rather than short toilets.
+      let w, h;
+      if (level.scene === "hospital") {
+        w = 56 + Math.floor(rand() * 18);   // 56..73 wide
+        h = 72 + Math.floor(rand() * 22);   // 72..93 tall
+      } else {
+        w = 42 + Math.floor(rand() * 14);
+        h = 44 + Math.floor(rand() * 18);
+      }
       obstacles.push({ type: "spike", x, w, h });
       // Reward burger before the toilet
       tryPushCollectible(x - 90, 240);
@@ -620,8 +647,8 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
         }
       } else if (level.scene === "hospital") {
         if (sprites.patient) {
-          const drawW = 48;
-          const drawH = 72;
+          const drawW = 76;                                       // was 48
+          const drawH = 108;                                      // was 72
           const dx = sx + o.w / 2 - drawW / 2;
           const dy = H - GROUND_HEIGHT - drawH;
           ctx.imageSmoothingEnabled = false;
@@ -919,15 +946,16 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
         reachedFinish: true,
       });
     }
-    // Hospital lights: occasional short flicker → temporary darkness overlay.
+    // Hospital lights: longer power failure → 2-3s of near-darkness.
+    // Interval is stretched so it never happens back-to-back on the player.
     if (level.scene === "hospital") {
       if (!flicker.active && state.elapsed >= flicker.nextAt) {
         flicker.active = true;
-        flicker.until = state.elapsed + 0.14 + Math.random() * 0.12; // 0.14-0.26s
+        flicker.until = state.elapsed + 2.0 + Math.random() * 1.0;   // 2.0-3.0s
       }
       if (flicker.active && state.elapsed >= flicker.until) {
         flicker.active = false;
-        flicker.nextAt = state.elapsed + 5 + Math.random() * 8;      // 5-13s
+        flicker.nextAt = state.elapsed + 10 + Math.random() * 10;    // 10-20s between blackouts
       }
     }
     // time out (song ended)
@@ -1035,16 +1063,22 @@ export function createGame({ canvas, level, duration, beatTimes, onStateChange, 
     // silhouettes remain visible enough to keep dodging obstacles.
     if (level.scene === "hospital" && flicker.active) {
       ctx.save();
-      ctx.fillStyle = "rgba(5,8,12,0.78)";
+      // Slightly less opaque so a 2-3s blackout stays readable.
+      ctx.fillStyle = "rgba(5,8,12,0.72)";
       ctx.fillRect(0, 0, W, H);
-      // Small residual glow so the player isn't 100% blind
+      // Wider residual glow around the player — like an emergency light on their body.
       const px = player.x - state.cameraX + player.w / 2;
       const py = player.y + player.h / 2;
-      const grad = ctx.createRadialGradient(px, py, 20, px, py, 140);
-      grad.addColorStop(0, "rgba(255,247,210,0.35)");
+      const grad = ctx.createRadialGradient(px, py, 30, px, py, 220);
+      grad.addColorStop(0, "rgba(255,247,210,0.55)");
+      grad.addColorStop(0.6, "rgba(255,247,210,0.15)");
       grad.addColorStop(1, "rgba(255,247,210,0)");
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, W, H);
+      // Occasional emergency-red pulse at the top edge (readable "power is out" cue).
+      const pulse = 0.35 + Math.sin(performance.now() / 120) * 0.25;
+      ctx.fillStyle = `rgba(239,71,111,${pulse})`;
+      ctx.fillRect(0, 0, W, 4);
       ctx.restore();
     }
   }
