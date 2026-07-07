@@ -57,12 +57,12 @@ LEVELS = [
         "story_outro": "He managed to avoid the pressure of silence",
         "collect_label": "Notes",
         "collect_icon": "🎵",
-        "default_song_seconds": 75,
+        "default_song_seconds": 182,
         # Bright clinical palette: near-white walls, sickly green floor, amber signage.
         "palette": {"sky": "#eef2f5", "ground": "#c8d4d0", "accent": "#FFD166"},
         "seed": 27,
         "scene": "hospital",
-        "preset_song": {"filename": "kaldvin.mp3", "duration_seconds": 75}
+        "preset_song": {"filename": "kaldvin.mp3", "duration_seconds": 182}
     },
     {
         "id": "Bogey",
